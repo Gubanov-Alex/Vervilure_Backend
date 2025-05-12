@@ -34,6 +34,20 @@ To navigate this documentation:
 2. Explore the [API Documentation](docs/api/overview.md) for information on available endpoints
 3. Reference the [Diagrams](docs/diagrams/system_overview.md) for visual understanding of the system
 
+## Development Environment Setup
+
+1. Clone the repository
+2. Install poetry: `curl -sSL https://install.python-poetry.org | python3 -`
+3. Install dependencies: `poetry install`
+4. Create a .env file based on the .env.example template: `cp .env.example .env`
+5. Generate a Django secret key: `python generate_secret_key.py`
+6. Add the generated key and other necessary settings to your .env file
+7. Apply migrations: `poetry run python manage.py migrate`
+8. Run the development server: `poetry run python manage.py runserver`
+9. Access the application at `http://localhost:8000`
+
+
+
 ## Project Technologies
 
 Our project uses the following key technologies:
