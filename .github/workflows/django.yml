@@ -1,0 +1,48 @@
+name: Django CI
+
+permissions:
+  contents: read
+  pull-requests: write
+
+on:
+  push:
+    branches: [ "dev", "deploy" ]
+  pull_request:
+    branches: [ "dev", "deploy" ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 4
+      matrix:
+        python-version: [3.12, 3.13]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Configure Poetry (disable venvs)
+        run: |
+          poetry config virtualenvs.create false
+
+      - name: Install dependencies with Poetry
+        run: |
+          poetry install --no-root
+
+      - name: Run Django tests
+        run: |
+          export PYTHONPATH=.
+          export DATABASE_URL=sqlite:///db.sqlite
+          poetry run python manage.py migrate
+          poetry run python manage.py test
