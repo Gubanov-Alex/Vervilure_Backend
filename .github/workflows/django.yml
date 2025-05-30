@@ -1,4 +1,4 @@
-name: Django CI v2
+name: Django CI v3
 
 permissions:
   contents: read
