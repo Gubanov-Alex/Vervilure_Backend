@@ -6,9 +6,9 @@ permissions:
 
 on:
   push:
-    branches: [ "dev", "deploy" ]
+    branches: [ "dev", "deploy", "CI_update" ]
   pull_request:
-    branches: [ "dev", "deploy" ]
+    branches: [ "dev", "deploy", "CI_update" ]
   workflow_dispatch:  # Ручной запуск
     inputs:
       debug_enabled:
