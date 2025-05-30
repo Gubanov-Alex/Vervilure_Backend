@@ -72,6 +72,10 @@ use_parentheses = true
 src_paths = []
 
 
+[tool.flake8]
+max-line-length = 120
+exclude = ".venv,__pycache__,migrations"
+
 
 [tool.mypy]
 #python_version = '3.12'
