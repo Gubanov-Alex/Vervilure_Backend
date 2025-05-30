@@ -107,7 +107,7 @@ jobs:
         run: |
           poetry run black --check --diff .
           poetry run isort --check --diff .
-           poetry run flake8 . --max-line-length=120 --extend-ignore=E203,W503 --show-source --statistics
+          poetry run flake8 . --max-line-length=120 --extend-ignore=E203,W503 --show-source --statistics
 
       - name: Type checking
         run: |
