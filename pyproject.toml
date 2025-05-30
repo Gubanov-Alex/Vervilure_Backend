@@ -7,8 +7,7 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.12"
-django = "^5.2.1"
-poetry-core = "^2.1.3"
+django = "^5.1.5"
 celery = "^5.5.2"
 django-redis = "^5.4.0"
 stripe = "^12.1.0"
@@ -17,7 +16,10 @@ psycopg2-binary = "^2.9.10"
 python-dotenv = "^1.1.0"
 dj-database-url = "^2.3.0"
 
-[dev-packages]
+[tool.poetry.group.dev.dependencies]
+black = "*"
+isort = "*"
+flake8 = "*"
 django-types = "*"
 ipdb = "*"
 celery-types = "*"
@@ -25,12 +27,81 @@ fastapi = "*"
 pydantic = "*"
 uvicorn = "*"
 requests = "*"
-flake8 = "*"
-black = "*"
-isort = "*"
-mypy = "*"
-pytest = "*"
+safety = "^3.5.1"
+coverage = "^7.8.0"
+autoflake = "^2.3.1"
+
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+
+
+
+# ************************************************
+# ********** Code Quality Tools **********
+# ************************************************
+
+[tool.black]
+target-version = ['py312']
+line-length = 88
+exclude = '''
+(
+  /(
+      \.eggs         # exclude a few common directories in the
+    | \.git          # root of the project
+    | \.hg
+    | \.mypy_cache
+    | \.tox
+    | \.venv
+    | .pytest_cache
+    | seed
+  )/
+)
+'''
+
+
+[tool.isort]
+profile = "black"
+line_length = 88
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+src_paths = []
+
+
+
+[tool.mypy]
+#python_version = '3.12'
+warn_redundant_casts = true
+warn_unused_ignores = true
+show_error_codes = true
+namespace_packages = true
+exclude = ["migrations"]
+
+# Silence "type import errors" as our 3rd-party libs does not have types
+# Check: https://mypy.readthedocs.io/en/latest/config_file.html#import-discovery
+follow_imports = 'silent'
+
+[[tool.mypy.overrides]]
+ignore_missing_imports=true
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "*/migrations/*",
+    "*/tests/*",
+    "*/venv/*",
+    "manage.py",
+    "config/settings.py"
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError"
+]
