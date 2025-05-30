@@ -27,9 +27,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret! # change password in production
-SECRET_KEY = os.environ.get(
-    "SECRET_KEY", "3305dl0$(2*!)m5yv(fklv-t)%)q-y_po8o0)9b3_)3j*337fs"
-)
+SECRET_KEY = os.environ.get("SECRET_KEY", "3305dl0$(2*!)m5yv(fklv-t)%)q-y_po8o0)9b3_)3j*337fs")
 
 
 # SECURITY WARNING: don't run with debug turned on in production!
@@ -95,9 +93,7 @@ WSGI_APPLICATION = "config.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL", "postgres://admin:admin@localhost:5432/vervilure"
-)
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://admin:admin@localhost:5432/vervilure")
 
 if DATABASE_URL:
     DATABASES = {"default": dj_database_url.parse(DATABASE_URL, conn_max_age=600)}
@@ -107,9 +103,7 @@ else:
             "ENGINE": os.environ.get("DB_ENGINE", "django.db.backends.postgresql"),
             "NAME": os.environ.get("DB_NAME", "vervilure"),
             "USER": os.environ.get("DB_USER", "admin"),
-            "PASSWORD": os.environ.get(
-                "DB_PASSWORD", "admin"
-            ),  # change password in production
+            "PASSWORD": os.environ.get("DB_PASSWORD", "admin"),  # change password in production
             "HOST": os.environ.get("DB_HOST", "localhost"),
             "PORT": os.environ.get("DB_PORT", "5432"),
         }
@@ -175,25 +169,19 @@ CACHES = {
 
 # Celery
 CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
-CELERY_RESULT_BACKEND = os.environ.get(
-    "CELERY_RESULT_BACKEND", "redis://localhost:6379/0"
-)
+CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 
 # Email
-EMAIL_BACKEND = os.environ.get(
-    "EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend"
-)
+EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
 EMAIL_HOST = os.environ.get("EMAIL_HOST", "smtp.example.com")
 EMAIL_PORT = int(os.environ.get("EMAIL_PORT", 587))
 EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
 EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "True").lower() == "true"
-DEFAULT_FROM_EMAIL = os.environ.get(
-    "DEFAULT_FROM_EMAIL", "Vervilure <noreply@example.com>"
-)
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "Vervilure <noreply@example.com>")
 
 # Stripe
 STRIPE_PUBLIC_KEY = os.environ.get("STRIPE_PUBLIC_KEY", "")
