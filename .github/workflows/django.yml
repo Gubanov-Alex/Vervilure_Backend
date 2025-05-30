@@ -9,6 +9,13 @@ on:
     branches: [ "dev", "deploy" ]
   pull_request:
     branches: [ "dev", "deploy" ]
+  workflow_dispatch:  # Ручной запуск
+    inputs:
+      debug_enabled:
+        description: 'Enable debug mode'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   test:
