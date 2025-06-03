@@ -1,12 +1,16 @@
 Vervilure E-commerce Platform
 A comprehensive Django-based e-commerce platform providing a scalable and robust solution for online retail operations.
+
 Project Status
 🚧 Early Development 🚧
-This project is currently in the early stages of development. Core features are being designed and implemented. The codebase is not yet ready for production use.
-About This Project
-This platform is built to support product management, user authentication, shopping cart functionality, order processing, and payment integration. It offers a complete solution for modern e-commerce businesses with both admin and customer interfaces.
-Key Features
 
+This project is currently in the early stages of development. Core features are being designed and implemented. The codebase is not yet ready for production use.
+
+About This Project
+
+This platform is built to support product management, user authentication, shopping cart functionality, order processing, and payment integration. It offers a complete solution for modern e-commerce businesses with both admin and customer interfaces.
+
+Key Features
 🔐 User authentication and authorization
 📦 Product catalog with categories and search
 🛒 Shopping cart and order management
