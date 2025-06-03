@@ -1,0 +1,228 @@
+.PHONY: help build up down restart logs shell migrate makemigrations test superuser env-docker env-local setup-docker clean reset-db lint format test-coverage debug init status collectstatic db-shell redis-cli tools tools-down info fix-docker reset-all debug-web debug-celery debug-all restart-services check-django
+
+# Default target
+help:
+	@echo "Available commands:"
+	@echo "  build         - Build Docker images"
+	@echo "  up            - Start all services"
+	@echo "  down          - Stop all services"
+	@echo "  restart       - Restart all services"
+	@echo "  logs          - Show logs for all services"
+	@echo "  status        - Show services status"
+	@echo "  shell         - Open Django shell"
+	@echo "  migrate       - Run Django migrations"
+	@echo "  makemigrations- Create Django migrations"
+	@echo "  test          - Run tests"
+	@echo "  test-coverage - Run tests with coverage"
+	@echo "  superuser     - Create Django superuser"
+	@echo "  collectstatic - Collect static files"
+	@echo "  env-docker    - Switch to Docker environment"
+	@echo "  env-local     - Switch to local environment"
+	@echo "  setup-docker  - Complete Docker setup"
+	@echo "  clean         - Clean containers and volumes"
+	@echo "  reset-db      - Reset database"
+	@echo "  lint          - Run code linting"
+	@echo "  format        - Format code"
+	@echo "  db-shell      - Open PostgreSQL shell"
+	@echo "  redis-cli     - Open Redis CLI"
+	@echo "  tools         - Start development tools (pgAdmin, Redis Commander)"
+	@echo "  tools-down    - Stop development tools"
+	@echo "  debug         - Show PyCharm debugging setup"
+	@echo "  init          - Initialize project"
+	@echo "  info          - Show project info and status"
+	@echo "  fix-docker    - Fix common Docker build issues"
+	@echo "  reset-all     - Complete reset (nuclear option)"
+	@echo "  debug-web     - Show web container logs"
+	@echo "  debug-celery  - Show celery container logs"
+	@echo "  debug-all     - Show all container logs"
+	@echo "  restart-services - Restart failed services"
+	@echo "  check-django  - Check Django configuration"
+
+# Docker commands
+build:
+	docker-compose build
+
+up:
+	docker-compose up -d
+	@echo "Services started. Web available at http://localhost:8000"
+
+down:
+	docker-compose down
+
+restart:
+	docker-compose restart
+
+logs:
+	docker-compose logs -f
+
+# Status check
+status:
+	docker-compose ps
+
+# Django commands
+shell:
+	docker-compose exec web poetry run python manage.py shell
+
+migrate:
+	@echo "Running migrations..."
+	docker-compose exec web poetry run python manage.py migrate
+
+makemigrations:
+	docker-compose exec web poetry run python manage.py makemigrations
+
+test:
+	docker-compose exec web poetry run python manage.py test
+
+superuser:
+	docker-compose exec web poetry run python manage.py createsuperuser
+
+collectstatic:
+	docker-compose exec web poetry run python manage.py collectstatic --noinput
+
+# Environment switching
+env-docker:
+	@echo "Switching to Docker environment..."
+	@if [ ! -f .env.docker ]; then echo "Error: .env.docker not found. Create it first."; exit 1; fi
+	@if [ -f .env ] && [ ! -f .env.local ]; then mv .env .env.local; fi
+	@cp .env.docker .env
+	@echo "Switched to Docker environment"
+
+env-local:
+	@echo "Switching to local environment..."
+	@if [ ! -f .env.local ]; then echo "Error: .env.local not found"; exit 1; fi
+	@if [ -f .env ]; then cp .env .env.docker; fi
+	@cp .env.local .env
+	@echo "Switched to local environment"
+
+# Quick setup for Docker
+setup-docker:
+	@echo "Setting up Docker environment..."
+	$(MAKE) env-docker
+	$(MAKE) build
+	$(MAKE) up
+	@echo "Waiting for services to start..."
+	sleep 15
+	$(MAKE) migrate
+	@echo "Docker setup complete! Create superuser with 'make superuser'"
+
+# Testing and Quality
+test-coverage:
+	@echo "Running tests with coverage..."
+	docker-compose exec web poetry run coverage run --source='.' manage.py test
+	docker-compose exec web poetry run coverage html
+	@echo "Coverage report generated in htmlcov/"
+
+
+lint:
+	@echo "Running code linting..."
+	docker-compose exec web poetry run flake8 --max-line-length=120 . || true
+	docker-compose exec web poetry run mypy . || true
+
+format:
+	@echo "Formatting code..."
+	docker-compose exec web poetry run black .
+	docker-compose exec web poetry run isort .
+
+# Maintenance
+clean:
+	@echo "Cleaning up containers and volumes..."
+	docker-compose down -v
+	docker system prune -f
+	docker volume prune -f
+
+reset-db:
+	@echo "Resetting database..."
+	docker-compose down
+	docker volume rm $$(docker-compose config --services | head -1)_postgres_data 2>/dev/null || true
+	docker-compose up -d db
+	@echo "Waiting for database to start..."
+	sleep 10
+	$(MAKE) migrate
+	@echo "Database reset complete. Create superuser with 'make superuser'"
+
+# Development helpers
+db-shell:
+	docker-compose exec db psql -U admin -d test_db
+
+redis-cli:
+	docker-compose exec redis redis-cli
+
+# Development tools
+tools:
+	@echo "Starting development tools..."
+	docker-compose --profile tools up -d
+	@echo "Tools started:"
+	@echo "  pgAdmin: http://localhost:8080 (admin@vervilure.local / admin)"
+	@echo "  Redis Commander: http://localhost:8081"
+
+tools-down:
+	docker-compose --profile tools down
+
+# PyCharm specific
+debug:
+	@echo "PyCharm Remote Debugging Setup:"
+	@echo "1. Run → Edit Configurations → Python Remote Debug"
+	@echo "2. Host: localhost, Port: 5678"
+	@echo "3. Path mappings: /app → $(PWD)"
+	@echo "4. Add this to your code:"
+	@echo "   import pydevd_pycharm"
+	@echo "   pydevd_pycharm.settrace('host.docker.internal', port=5678)"
+
+# Environment setup
+init:
+	@echo "Initializing project..."
+	@if [ -f .env_default ]; then cp .env_default .env; else echo "Warning: .env_default not found"; fi
+	@echo "Please edit .env file with your settings"
+	@echo "Then run: make setup-docker"
+
+# Quick fixes
+fix-docker:
+	@echo "Fixing Docker build issues..."
+	@if [ ! -f README.md ]; then echo "# Vervilure E-commerce Platform" > README.md; echo "Created README.md"; fi
+	@echo "Cleaning Docker cache..."
+	docker builder prune -f
+	@echo "Rebuilding..."
+	$(MAKE) build
+
+# Debugging commands
+debug-web:
+	@echo "Web container logs:"
+	docker-compose logs web
+
+debug-celery:
+	@echo "Celery container logs:"
+	docker-compose logs celery
+
+debug-all:
+	@echo "All container logs:"
+	docker-compose logs
+
+# Restart failed services
+restart-services:
+	@echo "Restarting failed services..."
+	docker-compose up -d web celery
+
+# Check Django configuration
+check-django:
+	@echo "Checking Django configuration..."
+	docker-compose run --rm web poetry run python manage.py check
+
+# Reset everything
+reset-all:
+	@echo "Resetting entire Docker environment..."
+	docker-compose down -v
+	docker system prune -af
+	docker volume prune -f
+	$(MAKE) fix-docker
+	$(MAKE) setup-docker
+
+# Project info
+info:
+	@echo "Project: Vervilure E-commerce Platform"
+	@echo "Services status:"
+	@docker-compose ps
+	@echo ""
+	@echo "Available URLs:"
+	@echo "  Django: http://localhost:8000"
+	@echo "  PostgreSQL: localhost:5490"
+	@echo "  Redis: localhost:6379"
