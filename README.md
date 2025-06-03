@@ -1,68 +1,21 @@
-E-commerce Platform
+Vervilure E-commerce Platform
 A comprehensive Django-based e-commerce platform providing a scalable and robust solution for online retail operations.
-
 Project Status
 🚧 Early Development 🚧
-
 This project is currently in the early stages of development. Core features are being designed and implemented. The codebase is not yet ready for production use.
-
 About This Project
 This platform is built to support product management, user authentication, shopping cart functionality, order processing, and payment integration. It offers a complete solution for modern e-commerce businesses with both admin and customer interfaces.
-
 Key Features
-User authentication and authorization
-Product catalog with categories and search
-Shopping cart and order management
-Payment processing with Stripe
-RESTful API for mobile and third-party integration
-Asynchronous task processing for performance optimization
-Documentation Structure
-Architecture: System architecture, design patterns, and technical decisions
-API: API endpoints, authentication, and usage examples
-Diagrams: System diagrams and visual representations
-Getting Started
-To navigate this documentation:
 
-Start with the Architecture Overview to understand the system design
-Explore the API Documentation for information on available endpoints
-Reference the Diagrams for visual understanding of the system
-Development Environment Setup
-Clone the repository
-Install poetry: curl -sSL https://install.python-poetry.org | python3 -
-Install dependencies: poetry install
-Create a .env file based on the .env.example template: cp .env.example .env
-Generate a Django secret key: python generate_secret_key.py
-Add the generated key and other necessary settings to your .env file
-Apply migrations: poetry run python manage.py migrate
-Run the development server: poetry run python manage.py runserver
-Access the application at http://localhost:8000
-Project Technologies
-Our project uses the following key technologies:
-
-Django 5.2.x: Web framework
-Django REST Framework: API development
-PostgreSQL: Database
-Celery: Task queue
-Redis: Cache and message broker
-Stripe: Payment processing
-Docker: Containerization
-Poetry: Dependency management
-GitHub Actions: CI/CD
-Requirements
-Python 3.12+
-PostgreSQL 13+
-Redis 6+
-Development Roadmap
- Core architecture design
- User authentication system
- Product catalog implementation
- Shopping cart functionality
- Order processing system
- Payment integration
- API development
- Frontend templates
- Testing and QA
- Documentation completion
+🔐 User authentication and authorization
+📦 Product catalog with categories and search
+🛒 Shopping cart and order management
+💳 Payment processing with Stripe
+🔌 RESTful API for mobile and third-party integration
+⚡ Asynchronous task processing for performance optimization
+🐳 Full Docker support for development and production
+🔄 CI/CD pipeline with GitHub Actions
+📊 Comprehensive testing suite
 
 # Docker and Makefile Development Setup
 
