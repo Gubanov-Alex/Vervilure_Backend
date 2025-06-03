@@ -6,9 +6,9 @@ permissions:
 
 on:
   push:
-    branches: [ "dev", "deploy", "CI_update" ]
+    branches: [ "dev", "deploy", "docker_update" ]
   pull_request:
-    branches: [ "dev", "deploy", "CI_update" ]
+    branches: [ "dev", "deploy", "docker_update" ]
   workflow_dispatch:  # Ручной запуск
     inputs:
       debug_enabled:
@@ -92,12 +92,18 @@ jobs:
           cat >> .env << EOF
           SECRET_KEY=django-insecure-key-for-testing-$(date +%s)
           DEBUG=True
-          DATABASE_URL=${{ env.DATABASE_URL }}
-          CELERY_BROKER_URL=${{ env.CELERY_BROKER_URL }}
-          CELERY_RESULT_BACKEND=${{ env.CELERY_RESULT_BACKEND }}
+          DATABASE_URL=postgres://admin:admin_password@localhost:5440/test_db
+          CELERY_BROKER_URL=redis://localhost:6390/0
+          CELERY_RESULT_BACKEND=redis://localhost:6390/0
           REDIS_HOST=localhost
           REDIS_PORT=6390
+          DB_HOST=localhost
+          DB_PORT=5440
+          DB_NAME=test_db
+          DB_USER=admin
+          DB_PASSWORD=admin_password
           EOF
+          cat .env  # Выводим содержимое для отладки
 
       - name: Check security vulnerabilities
         run: |
@@ -122,12 +128,19 @@ jobs:
       - name: Run Django migrations
         run: |
           export PYTHONPATH=$PWD
+          echo "Database URL: $DATABASE_URL"
+          echo "Current directory: $(pwd)"
+          echo "Python path: $PYTHONPATH"
+          echo "Environment variables:"
+          env | grep -E 'DATABASE|POSTGRES|DB_'
+          poetry run python -c "import os; print('DATABASE_URL from Python:', os.environ.get('DATABASE_URL'))"
           poetry run python manage.py migrate --noinput
 
       - name: Run Django tests
         run: |
           export PYTHONPATH=$PWD
-          poetry run python manage.py test --verbosity=2 --parallel
+          # Добавляем дополнительное время для запуска тестов
+          poetry run python manage.py test --verbosity=2 --parallel --keepdb
 
   coverage:
     needs: test
