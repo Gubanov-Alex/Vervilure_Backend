@@ -6,7 +6,7 @@ permissions:
 
 on:
   push:
-    branches: [ "dev", "deploy", "docker_update" ]
+    branches: [ "dev", "deploy", "feat/docker_update" ]
   pull_request:
     branches: [ "dev", "deploy", "docker_update" ]
   workflow_dispatch:  # Ручной запуск
