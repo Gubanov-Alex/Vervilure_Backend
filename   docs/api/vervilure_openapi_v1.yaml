@@ -1,0 +1,830 @@
+openapi: 3.1.0
+info:
+  title: Vervilure E-commerce API
+  version: 1.0.1
+  description: |
+    REST API for Vervilure e-commerce platform.
+    Built with Django REST Framework and django-allauth.
+    
+    Architecture follows modular Django apps structure:
+    - accounts: User management with django-allauth
+    - catalog: Products, categories, search
+    - cart: Session & persistent shopping cart
+    - orders: Order lifecycle with Stripe payments
+    - wishlist: User wishlist management
+    - reviews: Product reviews & ratings
+    - loyalty: Points-based loyalty program
+
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local development
+  - url: https://staging-api.vervilure.com/api/v1
+    description: Staging server
+  - url: https://api.vervilure.com/api/v1
+    description: Production server
+
+security:
+  - TokenAuth: []
+  - SessionAuth: []
+
+tags:
+  - name: users
+    description: User authentication & profile (django-allauth based)
+  - name: catalog
+    description: Products, categories, search with filtering
+  - name: cart
+    description: Shopping cart operations (session & authenticated)
+  - name: wishlist
+    description: User wishlist management
+  - name: orders
+    description: Order placement, tracking & Stripe integration
+  - name: reviews
+    description: Product reviews & ratings
+  - name: loyalty
+    description: Loyalty points system
+
+paths:
+  # Users/Authentication (django-allauth)
+  /users/auth/registration/:
+    post:
+      tags: [users]
+      summary: Register new user
+      description: Register with email or social auth (Google)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                password1:
+                  type: string
+                password2:
+                  type: string
+                first_name:
+                  type: string
+                last_name:
+                  type: string
+              required: [email, password1, password2]
+      responses:
+        201:
+          description: Registration successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key:
+                    type: string
+                    description: Authentication token
+        400:
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /users/auth/login/:
+    post:
+      tags: [users]
+      summary: User login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+              required: [email, password]
+      responses:
+        200:
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key:
+                    type: string
+
+  /users/auth/logout/:
+    post:
+      tags: [users]
+      summary: Logout user
+      security:
+        - TokenAuth: []
+      responses:
+        200:
+          description: Logout successful
+
+  /users/auth/google/:
+    post:
+      tags: [users]
+      summary: Google OAuth login
+      description: Authenticate using Google OAuth (django-allauth)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                access_token:
+                  type: string
+              required: [access_token]
+      responses:
+        200:
+          description: Google auth successful
+
+  /users/me/:
+    get:
+      tags: [users]
+      summary: Get current user profile
+      security:
+        - TokenAuth: []
+      responses:
+        200:
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+    
+    patch:
+      tags: [users]
+      summary: Update user profile
+      security:
+        - TokenAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserProfileUpdate'
+      responses:
+        200:
+          description: Profile updated
+
+  # Catalog
+  /catalog/products/:
+    get:
+      tags: [catalog]
+      summary: List products with filtering
+      parameters:
+        - name: category_id
+          in: query
+          schema:
+            type: integer
+          description: Filter by category ID
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Search in title and description
+        - name: min_price
+          in: query
+          schema:
+            type: number
+        - name: max_price
+          in: query
+          schema:
+            type: number
+        - name: ordering
+          in: query
+          schema:
+            type: string
+            enum: [price, -price, created_at, -created_at]
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+      responses:
+        200:
+          description: Products list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedProducts'
+
+  /catalog/products/{id}/:
+    get:
+      tags: [catalog]
+      summary: Get product details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        200:
+          description: Product details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductDetail'
+        404:
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /catalog/categories/:
+    get:
+      tags: [catalog]
+      summary: List product categories
+      responses:
+        200:
+          description: Categories list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Category'
+
+  # Cart (supports both session and authenticated users)
+  /cart/:
+    get:
+      tags: [cart]
+      summary: Get current cart
+      description: Works for both authenticated and anonymous users (session-based)
+      responses:
+        200:
+          description: Cart contents
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cart'
+
+  /cart/items/:
+    post:
+      tags: [cart]
+      summary: Add item to cart
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                product_id:
+                  type: integer
+                quantity:
+                  type: integer
+                  minimum: 1
+              required: [product_id, quantity]
+      responses:
+        201:
+          description: Item added to cart
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CartItem'
+
+  /cart/items/{item_id}/:
+    patch:
+      tags: [cart]
+      summary: Update cart item quantity
+      parameters:
+        - name: item_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                quantity:
+                  type: integer
+                  minimum: 1
+      responses:
+        200:
+          description: Cart item updated
+
+    delete:
+      tags: [cart]
+      summary: Remove item from cart
+      parameters:
+        - name: item_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        204:
+          description: Item removed
+
+  # Orders
+  /orders/:
+    get:
+      tags: [orders]
+      summary: List user orders
+      security:
+        - TokenAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, processing, shipped, delivered, cancelled]
+        - $ref: '#/components/parameters/PageParam'
+      responses:
+        200:
+          description: Orders list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedOrders'
+
+    post:
+      tags: [orders]
+      summary: Create order from cart
+      security:
+        - TokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderCreate'
+      responses:
+        201:
+          description: Order created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderDetail'
+
+  /orders/{id}/:
+    get:
+      tags: [orders]
+      summary: Get order details
+      security:
+        - TokenAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        200:
+          description: Order details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderDetail'
+
+  # Wishlist (authenticated users only)
+  /wishlist/:
+    get:
+      tags: [wishlist]
+      summary: Get user wishlist
+      security:
+        - TokenAuth: []
+      responses:
+        200:
+          description: Wishlist items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WishlistItem'
+
+  /wishlist/items/:
+    post:
+      tags: [wishlist]
+      summary: Add product to wishlist
+      security:
+        - TokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                product_id:
+                  type: integer
+              required: [product_id]
+      responses:
+        201:
+          description: Product added to wishlist
+
+  /wishlist/items/{id}/:
+    delete:
+      tags: [wishlist]
+      summary: Remove product from wishlist
+      security:
+        - TokenAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        204:
+          description: Product removed from wishlist
+
+  # Reviews
+  /reviews/:
+    get:
+      tags: [reviews]
+      summary: List all reviews (admin)
+      security:
+        - TokenAuth: []
+      responses:
+        200:
+          description: Reviews list
+
+    post:
+      tags: [reviews]
+      summary: Create product review
+      description: Only allowed for users who purchased the product
+      security:
+        - TokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewCreate'
+      responses:
+        201:
+          description: Review created
+
+  /reviews/{id}/:
+    get:
+      tags: [reviews]
+      summary: Get review details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        200:
+          description: Review details
+
+    put:
+      tags: [reviews]
+      summary: Update own review
+      security:
+        - TokenAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewUpdate'
+      responses:
+        200:
+          description: Review updated
+
+    delete:
+      tags: [reviews]
+      summary: Delete own review
+      security:
+        - TokenAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        204:
+          description: Review deleted
+
+  # Loyalty Program
+  /loyalty/account/:
+    get:
+      tags: [loyalty]
+      summary: Get loyalty account info
+      security:
+        - TokenAuth: []
+      responses:
+        200:
+          description: Loyalty account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoyaltyAccount'
+
+  /loyalty/transactions/:
+    get:
+      tags: [loyalty]
+      summary: Get loyalty transaction history
+      security:
+        - TokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+      responses:
+        200:
+          description: Transaction history
+
+components:
+  securitySchemes:
+    TokenAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: "Token authentication. Format: `Token <your-token>`"
+    
+    SessionAuth:
+      type: apiKey
+      in: cookie
+      name: sessionid
+      description: "Django session authentication"
+
+  parameters:
+    PageParam:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+
+    PerPageParam:
+      name: per_page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 50
+        default: 20
+
+  responses:
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        detail:
+          type: string
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+      example:
+        detail: "Validation failed"
+        errors:
+          email: ["This field is required"]
+
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+          format: email
+        first_name:
+          type: string
+        last_name:
+          type: string
+        date_joined:
+          type: string
+          format: date-time
+
+    UserProfileUpdate:
+      type: object
+      properties:
+        first_name:
+          type: string
+        last_name:
+          type: string
+
+    Product:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: string
+          description: Decimal field as string
+        category:
+          $ref: '#/components/schemas/Category'
+        stock_quantity:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ProductDetail:
+      allOf:
+        - $ref: '#/components/schemas/Product'
+        - type: object
+          properties:
+            images:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  image_url:
+                    type: string
+                    format: uri
+                  is_primary:
+                    type: boolean
+
+    Category:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        slug:
+          type: string
+        parent_id:
+          type: integer
+          nullable: true
+
+    Cart:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Cart UUID for session-based carts
+        user_id:
+          type: integer
+          nullable: true
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CartItem'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CartItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        product:
+          $ref: '#/components/schemas/Product'
+        quantity:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    WishlistItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        product:
+          $ref: '#/components/schemas/Product'
+        created_at:
+          type: string
+          format: date-time
+
+    OrderCreate:
+      type: object
+      properties:
+        shipping_address_id:
+          type: integer
+          description: ID of pre-saved address
+        payment_method_id:
+          type: integer
+          description: Stripe payment method ID
+      required: [shipping_address_id, payment_method_id]
+
+    OrderDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+        user:
+          $ref: '#/components/schemas/UserProfile'
+        status:
+          type: string
+          enum: [pending, processing, shipped, delivered, cancelled]
+        total_amount:
+          type: string
+          description: Decimal field as string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ReviewCreate:
+      type: object
+      properties:
+        product_id:
+          type: integer
+        rating:
+          type: integer
+          minimum: 0
+          maximum: 5
+        comment:
+          type: string
+      required: [product_id, rating]
+
+    ReviewUpdate:
+      type: object
+      properties:
+        rating:
+          type: integer
+          minimum: 0
+          maximum: 5
+        comment:
+          type: string
+
+    LoyaltyAccount:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/UserProfile'
+        accumulated_points:
+          type: integer
+        used_points:
+          type: integer
+
+    PaginatedProducts:
+      type: object
+      properties:
+        count:
+          type: integer
+        next:
+          type: string
+          format: uri
+          nullable: true
+        previous:
+          type: string
+          format: uri
+          nullable: true
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Product'
+
+    PaginatedOrders:
+      type: object
+      properties:
+        count:
+          type: integer
+        next:
+          type: string
+          format: uri
+          nullable: true
+        previous:
+          type: string
+          format: uri
+          nullable: true
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderDetail'
