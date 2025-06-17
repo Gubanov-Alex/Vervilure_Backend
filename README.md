@@ -34,7 +34,7 @@ Key Features
 1. Clone the repository:
    ```
    git clone <repository-url>
-   cd vervilure_back
+   cd Vervilure_Backend
    ```
 
 2. Initialize the project:
