@@ -1,14 +1,83 @@
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 from django.contrib.auth import get_user_model
-from django.core.cache import cache
+from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
-from src.apps.accounts.models import BlacklistedToken, UserAddress
 
 User = get_user_model()
+
+
+@pytest.mark.django_db
+class TestAuthViewSetExtended:
+    """Extended tests for AuthViewSet to improve coverage."""
+
+    def setup_method(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            email="test@example.com",
+            password="TestPass123!",
+            first_name="Test",
+            last_name="User",
+            is_active=True,
+            email_verified=True,
+        )
+
+    def test_register_validation_errors(self):
+        """Test registration with various validation errors."""
+        # Test invalid email format
+        data = {
+            "email": "invalid-email",
+            "password": "ValidPass123!",
+            "password_confirm": "ValidPass123!",
+            "first_name": "Test",
+            "last_name": "User",
+        }
+        response = self.client.post("/auth/register/", data)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_login_edge_cases(self):
+        """Test login edge cases."""
+        # Test with empty credentials
+        response = self.client.post("/auth/login/", {})
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+        # Test with only email
+        response = self.client.post("/auth/login/", {"email": "test@example.com"})
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    @patch("src.apps.accounts.views.GoogleOAuthValidator")
+    def test_google_oauth_validation_failure(self, mock_validator):
+        """Test Google OAuth with validation failure."""
+        mock_validator_instance = Mock()
+        mock_validator.return_value = mock_validator_instance
+        mock_validator_instance.validate.side_effect = Exception("Validation failed")
+
+        response = self.client.post("/auth/google/", {"access_token": "invalid"})
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_logout_with_refresh_token_blacklisting(self):
+        """Test logout with refresh token blacklisting."""
+        refresh = RefreshToken.for_user(self.user)
+        access_token = str(refresh.access_token)
+
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {access_token}")
+        response = self.client.post("/auth/logout/", {"refresh": str(refresh)})
+        assert response.status_code == status.HTTP_205_RESET_CONTENT
+
+    def test_refresh_token_edge_cases(self):
+        """Test refresh token edge cases."""
+        # Test with invalid refresh token
+        response = self.client.post("/auth/token/refresh/", {"refresh": "invalid_token"})
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+        # Test with expired refresh token
+        refresh = RefreshToken.for_user(self.user)
+        refresh.set_exp(lifetime=-1)  # Make it expired
+        response = self.client.post("/auth/token/refresh/", {"refresh": str(refresh)})
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
 @pytest.mark.django_db
@@ -270,6 +339,46 @@ class TestAuthViewSet:
 
 
 @pytest.mark.django_db
+class TestUserViewSetExtended:
+    """Extended tests for UserViewSet to improve coverage."""
+
+    def setup_method(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            email="test@example.com", password="TestPass123!", first_name="Test", last_name="User"
+        )
+        refresh = RefreshToken.for_user(self.user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {refresh.access_token}")
+
+    def test_partial_profile_update(self):
+        """Test partial profile update."""
+        data = {"first_name": "Updated"}
+        response = self.client.patch("/users/profile/", data)
+        assert response.status_code == status.HTTP_200_OK
+        self.user.refresh_from_db()
+        assert self.user.first_name == "Updated"
+
+    def test_profile_update_validation_errors(self):
+        """Test profile update with validation errors."""
+        data = {"email": "invalid-email"}
+        response = self.client.patch("/users/profile/", data)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_change_password_validation_errors(self):
+        """Test password change with various validation errors."""
+        # Test with weak new password
+        data = {"old_password": "TestPass123!", "new_password": "123", "new_password_confirm": "123"}
+        response = self.client.post("/users/change-password/", data)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_unauthorized_profile_access(self):
+        """Test unauthorized access to profile endpoints."""
+        self.client.credentials()  # Remove auth headers
+        response = self.client.get("/users/profile/")
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+@pytest.mark.django_db
 class TestUserViewSet:
     """Test UserViewSet for profile management"""
 
@@ -381,6 +490,80 @@ class TestUserViewSet:
 
         response = self.client.post("/users/change-password/", {})
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+@pytest.mark.django_db
+class TestUserAddressViewSetExtended:
+    """Extended tests for UserAddressViewSet to improve coverage."""
+
+    def setup_method(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(email="test@example.com", password="TestPass123!")
+        refresh = RefreshToken.for_user(self.user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {refresh.access_token}")
+
+    def test_address_creation_validation_errors(self):
+        """Test address creation with validation errors."""
+        data = {"address_type": "invalid_type", "street": "", "city": "Test City"}  # Required field empty
+        response = self.client.post("/users/addresses/", data)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_address_filtering_by_type(self):
+        """Test address filtering by type."""
+        # Create addresses of different types
+        from src.apps.accounts.models import UserAddress
+
+        UserAddress.objects.create(
+            user=self.user,
+            address_type="home",
+            street="123 Home St",
+            city="Home City",
+            state="HS",
+            postal_code="12345",
+            country="Home Country",
+        )
+        UserAddress.objects.create(
+            user=self.user,
+            address_type="work",
+            street="456 Work Ave",
+            city="Work City",
+            state="WS",
+            postal_code="67890",
+            country="Work Country",
+        )
+
+        response = self.client.get("/users/addresses/?address_type=home")
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 1
+        assert response.data[0]["address_type"] == "home"
+
+    def test_default_address_management(self):
+        """Test default address management."""
+        from src.apps.accounts.models import UserAddress
+
+        # Create first address as default
+        data = {
+            "address_type": "home",
+            "street": "123 Test St",
+            "city": "Test City",
+            "state": "TS",
+            "postal_code": "12345",
+            "country": "Test Country",
+            "is_default": True,
+        }
+        response = self.client.post("/users/addresses/", data)
+        assert response.status_code == status.HTTP_201_CREATED
+
+        address1_id = response.data["id"]
+
+        # Create second address as default (should make first non-default)
+        data["street"] = "456 Another St"
+        response = self.client.post("/users/addresses/", data)
+        assert response.status_code == status.HTTP_201_CREATED
+
+        # Check that first address is no longer default
+        address1 = UserAddress.objects.get(id=address1_id)
+        assert not address1.is_default
 
 
 @pytest.mark.django_db
