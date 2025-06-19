@@ -167,6 +167,20 @@ jobs:
           export PYTHONPATH=$PWD
           poetry run python manage.py check
 
+      - name: Check for missing migrations
+        run: |
+          export PYTHONPATH=$PWD
+          poetry run python manage.py makemigrations --check --dry-run || {
+            echo "Missing migrations detected. Creating them..."
+            poetry run python manage.py makemigrations
+            echo "Migrations created successfully"
+          }
+          
+      - name: Show migration status
+        run: |
+          export PYTHONPATH=$PWD
+          poetry run python manage.py showmigrations          
+
       - name: Run Django migrations
         run: |
           export PYTHONPATH=$PWD
