@@ -147,7 +147,6 @@ def get_database_config() -> Dict[str, Any]:
                 "OPTIONS": {
                     **base_options,
                     "sslmode": "disable",
-                    "options": "-c fsync=off -c synchronous_commit=off",
                 },
                 "CONN_MAX_AGE": 0,
                 "CONN_HEALTH_CHECKS": False,
@@ -160,7 +159,6 @@ def get_database_config() -> Dict[str, Any]:
         config["OPTIONS"] = {
             **base_options,
             "sslmode": "prefer" if not DEBUG else "disable",
-            "options": "-c shared_preload_libraries=pg_stat_statements",
         }
         return {"default": config}
 
