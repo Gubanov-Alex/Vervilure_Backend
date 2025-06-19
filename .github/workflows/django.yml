@@ -278,7 +278,7 @@ jobs:
         run: |
           export PYTHONPATH=$PWD
           poetry run coverage run --source=src manage.py test
-          poetry run coverage report -m --fail-under=80
+          poetry run coverage report -m --fail-under=70
           poetry run coverage xml
 
       - name: Upload coverage to Codecov

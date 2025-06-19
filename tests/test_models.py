@@ -1,0 +1,354 @@
+from datetime import date
+
+import pytest
+from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
+from django.db import IntegrityError
+from src.apps.accounts.models import BlacklistedToken, UserAddress
+
+User = get_user_model()
+
+
+@pytest.mark.django_db
+class TestUserModel:
+    """Test User model - increase coverage from 74% to 85%"""
+
+    def test_create_user_success(self):
+        """Test successful user creation"""
+        user = User.objects.create_user(
+            email="test@example.com", password="testpass123", first_name="Test", last_name="User"
+        )
+
+        assert user.email == "test@example.com"
+        assert user.first_name == "Test"
+        assert user.last_name == "User"
+        assert user.is_active is True
+        assert user.is_email_verified is False
+        assert user.check_password("testpass123")
+
+    def test_create_superuser_success(self):
+        """Test superuser creation"""
+        superuser = User.objects.create_superuser(
+            email="admin@example.com", password="adminpass123", first_name="Admin", last_name="User"
+        )
+
+        assert superuser.is_staff is True
+        assert superuser.is_superuser is True
+        assert superuser.is_email_verified is True
+
+    def test_create_user_email_normalization(self):
+        """Test email normalization"""
+        user = User.objects.create_user(
+            email="Test.User@EXAMPLE.COM", password="testpass123", first_name="Test", last_name="User"
+        )
+
+        assert user.email == "Test.User@example.com"
+
+    def test_duplicate_email_raises_error(self):
+        """Test duplicate email constraint"""
+        User.objects.create_user(
+            email="duplicate@example.com", password="testpass123", first_name="First", last_name="User"
+        )
+
+        with pytest.raises(IntegrityError):
+            User.objects.create_user(
+                email="duplicate@example.com", password="testpass123", first_name="Second", last_name="User"
+            )
+
+    def test_user_str_representation(self):
+        """Test user string representation"""
+        user = User.objects.create_user(
+            email="repr@example.com", password="testpass123", first_name="Repr", last_name="User"
+        )
+
+        expected = "repr@example.com (Repr User)"
+        assert str(user) == expected
+
+    def test_user_full_name_property(self):
+        """Test full_name property"""
+        user = User.objects.create_user(
+            email="fullname@example.com", password="testpass123", first_name="Full", last_name="Name"
+        )
+
+        assert user.full_name == "Full Name"
+        assert user.get_full_name() == "Full Name"
+
+    def test_user_full_name_with_empty_names(self):
+        """Test full_name with empty first/last names"""
+        user = User.objects.create_user(email="empty@example.com", password="testpass123", first_name="", last_name="")
+
+        assert user.full_name == ""
+        assert user.get_full_name() == ""
+
+    def test_user_full_name_with_single_name(self):
+        """Test full_name with only first name"""
+        user = User.objects.create_user(
+            email="single@example.com", password="testpass123", first_name="Single", last_name=""
+        )
+
+        assert user.full_name == "Single"
+
+    def test_phone_number_validation_valid(self):
+        """Test valid phone number formats"""
+        valid_numbers = ["+1234567890", "+12345678901234", "1234567890", "123456789"]
+
+        for phone in valid_numbers:
+            user = User.objects.create_user(
+                email=f"phone{phone[-4:]}@example.com",
+                password="testpass123",
+                first_name="Phone",
+                last_name="User",
+                phone_number=phone,
+            )
+            assert user.phone_number == phone
+
+    def test_phone_number_validation_invalid(self):
+        """Test invalid phone number formats"""
+        user = User(email="invalid@example.com", first_name="Invalid", last_name="Phone", phone_number="invalid-phone")
+
+        with pytest.raises(ValidationError):
+            user.full_clean()
+
+    def test_date_of_birth_field(self):
+        """Test date of birth field"""
+        birth_date = date(1990, 1, 1)
+        user = User.objects.create_user(
+            email="birthday@example.com",
+            password="testpass123",
+            first_name="Birthday",
+            last_name="User",
+            date_of_birth=birth_date,
+        )
+
+        assert user.date_of_birth == birth_date
+
+    def test_marketing_preferences(self):
+        """Test marketing preference fields"""
+        user = User.objects.create_user(
+            email="marketing@example.com",
+            password="testpass123",
+            first_name="Marketing",
+            last_name="User",
+            marketing_consent=True,
+            newsletter_subscription=True,
+        )
+
+        assert user.marketing_consent is True
+        assert user.newsletter_subscription is True
+
+    def test_google_oauth_fields(self):
+        """Test Google OAuth integration fields"""
+        user = User.objects.create_user(
+            email="google@example.com",
+            password="testpass123",
+            first_name="Google",
+            last_name="User",
+            google_id="123456789",
+        )
+
+        assert user.google_id == "123456789"
+
+    def test_duplicate_google_id_raises_error(self):
+        """Test duplicate Google ID constraint"""
+        User.objects.create_user(
+            email="google1@example.com",
+            password="testpass123",
+            first_name="Google1",
+            last_name="User",
+            google_id="duplicate_google_id",
+        )
+
+        with pytest.raises(IntegrityError):
+            User.objects.create_user(
+                email="google2@example.com",
+                password="testpass123",
+                first_name="Google2",
+                last_name="User",
+                google_id="duplicate_google_id",
+            )
+
+    def test_user_clean_method(self):
+        """Test user clean method email normalization"""
+        user = User(email="UPPER@EXAMPLE.COM", first_name="Clean", last_name="User")
+
+        user.clean()
+        assert user.email == "UPPER@example.com"
+
+    def test_user_manager_create_user_no_email(self):
+        """Test user creation without email raises error"""
+        with pytest.raises(ValueError, match="The Email field must be set"):
+            User.objects.create_user(email="", password="testpass123", first_name="No", last_name="Email")
+
+    def test_user_manager_create_superuser_no_staff(self):
+        """Test superuser creation with is_staff=False raises error"""
+        with pytest.raises(ValueError, match="Superuser must have is_staff=True"):
+            User.objects.create_superuser(
+                email="admin@example.com", password="adminpass123", first_name="Admin", last_name="User", is_staff=False
+            )
+
+    def test_user_manager_create_superuser_no_superuser(self):
+        """Test superuser creation with is_superuser=False raises error"""
+        with pytest.raises(ValueError, match="Superuser must have is_superuser=True"):
+            User.objects.create_superuser(
+                email="admin@example.com",
+                password="adminpass123",
+                first_name="Admin",
+                last_name="User",
+                is_superuser=False,
+            )
+
+
+@pytest.mark.django_db
+class TestUserAddressModel:
+    """Test UserAddress model"""
+
+    def setup_method(self):
+        self.user = User.objects.create_user(
+            email="address@example.com", password="testpass123", first_name="Address", last_name="User"
+        )
+
+    def test_create_address_success(self):
+        """Test successful address creation"""
+        address = UserAddress.objects.create(
+            user=self.user,
+            address_type="shipping",
+            street_address="123 Test St",
+            city="Test City",
+            state="TS",
+            postal_code="12345",
+            country="US",
+        )
+
+        assert address.user == self.user
+        assert address.address_type == "shipping"
+        assert address.street_address == "123 Test St"
+        assert address.is_default is False
+
+    def test_address_str_representation(self):
+        """Test address string representation"""
+        address = UserAddress.objects.create(
+            user=self.user,
+            address_type="billing",
+            street_address="456 Billing Ave",
+            city="Billing City",
+            state="BC",
+            postal_code="67890",
+            country="US",
+        )
+
+        expected = f"{self.user.email} - billing: 456 Billing Ave, Billing City, BC"
+        assert str(address) == expected
+
+    def test_address_type_choices(self):
+        """Test address type field choices"""
+        shipping_address = UserAddress.objects.create(
+            user=self.user,
+            address_type="shipping",
+            street_address="123 Ship St",
+            city="Ship City",
+            state="SC",
+            postal_code="11111",
+            country="US",
+        )
+
+        billing_address = UserAddress.objects.create(
+            user=self.user,
+            address_type="billing",
+            street_address="456 Bill Ave",
+            city="Bill City",
+            state="BC",
+            postal_code="22222",
+            country="US",
+        )
+
+        assert shipping_address.address_type == "shipping"
+        assert billing_address.address_type == "billing"
+
+    def test_default_address_functionality(self):
+        """Test default address setting"""
+        address = UserAddress.objects.create(
+            user=self.user,
+            address_type="shipping",
+            street_address="123 Default St",
+            city="Default City",
+            state="DC",
+            postal_code="33333",
+            country="US",
+            is_default=True,
+        )
+
+        assert address.is_default is True
+
+    def test_multiple_addresses_per_user(self):
+        """Test user can have multiple addresses"""
+        shipping = UserAddress.objects.create(
+            user=self.user,
+            address_type="shipping",
+            street_address="123 Ship St",
+            city="Ship City",
+            state="SC",
+            postal_code="11111",
+            country="US",
+        )
+
+        billing = UserAddress.objects.create(
+            user=self.user,
+            address_type="billing",
+            street_address="456 Bill Ave",
+            city="Bill City",
+            state="BC",
+            postal_code="22222",
+            country="US",
+        )
+
+        user_addresses = UserAddress.objects.filter(user=self.user)
+        assert user_addresses.count() == 2
+        assert shipping in user_addresses
+        assert billing in user_addresses
+
+
+@pytest.mark.django_db
+class TestBlacklistedTokenModel:
+    """Test BlacklistedToken model"""
+
+    def setup_method(self):
+        self.user = User.objects.create_user(
+            email="token@example.com", password="testpass123", first_name="Token", last_name="User"
+        )
+
+    def test_create_blacklisted_token(self):
+        """Test blacklisted token creation"""
+        token = BlacklistedToken.objects.create(token="test_token_string", user=self.user)
+
+        assert token.token == "test_token_string"
+        assert token.user == self.user
+        assert token.blacklisted_at is not None
+
+    def test_blacklisted_token_str_representation(self):
+        """Test blacklisted token string representation"""
+        token = BlacklistedToken.objects.create(token="repr_token_string", user=self.user)
+
+        expected = f"Token for {self.user.email} (blacklisted)"
+        assert str(token) == expected
+
+    def test_token_user_relationship(self):
+        """Test relationship between token and user"""
+        token = BlacklistedToken.objects.create(token="relationship_token", user=self.user)
+
+        # Test forward relationship
+        assert token.user == self.user
+
+        # Test reverse relationship
+        user_tokens = self.user.blacklisted_tokens.all()
+        assert token in user_tokens
+
+    def test_multiple_blacklisted_tokens_per_user(self):
+        """Test user can have multiple blacklisted tokens"""
+        token1 = BlacklistedToken.objects.create(token="token_1", user=self.user)
+
+        token2 = BlacklistedToken.objects.create(token="token_2", user=self.user)
+
+        user_tokens = BlacklistedToken.objects.filter(user=self.user)
+        assert user_tokens.count() == 2
+        assert token1 in user_tokens
+        assert token2 in user_tokens
