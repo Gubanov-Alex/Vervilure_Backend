@@ -93,14 +93,6 @@ def api_client():
 
 
 @pytest.fixture
-def api_client():
-    """Return DRF test client."""
-    from rest_framework.test import APIClient
-
-    return APIClient()
-
-
-@pytest.fixture
 def user_data():
     """Return valid user data for tests."""
     return {"email": "test@example.com", "password": "TestPass123!", "first_name": "Test", "last_name": "User"}
