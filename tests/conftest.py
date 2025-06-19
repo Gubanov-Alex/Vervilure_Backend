@@ -2,7 +2,7 @@
 
 import os
 import sys
-
+import pytest
 import django
 from django.conf import settings
 
@@ -72,9 +72,6 @@ def pytest_configure(config):
         )
 
     django.setup()
-
-
-import pytest
 
 
 @pytest.fixture
