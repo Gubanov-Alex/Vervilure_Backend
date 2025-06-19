@@ -120,8 +120,61 @@ lint:
 
 format:
 	@echo "Formatting code..."
-	docker-compose exec web poetry run black .
-	docker-compose exec web poetry run isort .
+	poetry run black .
+	poetry run isort .
+
+# Google OAuth Management
+cleanup-oauth-duplicates:
+	@echo "Cleaning up duplicate Google OAuth configurations..."
+	docker-compose exec web poetry run python manage.py cleanup_oauth_duplicates
+
+cleanup-oauth-duplicates-dry:
+	@echo "Checking for duplicate Google OAuth configurations..."
+	docker-compose exec web poetry run python manage.py cleanup_oauth_duplicates --dry-run
+
+test-google-oauth-clean:
+	@echo "Cleaning OAuth duplicates and running tests..."
+	$(MAKE) cleanup-oauth-duplicates
+	$(MAKE) test-google-oauth
+setup-mailpit:
+	@echo "Setting up Mailpit and OAuth..."
+	$(MAKE) up
+	sleep 5
+	docker-compose exec web poetry run python manage.py setup_oauth
+	@echo "Mailpit UI: http://localhost:8025"
+	@echo "Admin: http://localhost:8000/admin/"
+
+test-email:
+	docker-compose exec web poetry run python manage.py test_email
+
+# Authentication JWT Testing
+test-jwt-auth:
+	@echo "Running JWT authentication flow tests..."
+	docker-compose exec web poetry run python manage.py test_jwt_auth_flow --verbose
+
+test-jwt-auth-quick:
+	@echo "Running JWT authentication tests (no cleanup)..."
+	docker-compose exec web poetry run python manage.py test_jwt_auth_flow --skip-cleanup
+
+# Google OAuth Testing
+test-google-oauth:
+	@echo "Running Google OAuth authentication tests..."
+	docker-compose exec web poetry run python manage.py test_google_oauth --verbose
+
+test-google-oauth-quick:
+	@echo "Running Google OAuth tests (no cleanup)..."
+	docker-compose exec web poetry run python manage.py test_google_oauth --skip-cleanup
+
+mailpit-logs:
+	docker-compose logs mailpit
+
+# Complete testing setup
+setup-testing: setup-mailpit test-auth-flow
+	@echo "Testing environment ready!"
+	@echo "- Mailpit: http://localhost:8025"
+	@echo "- Django Admin: http://localhost:8000/admin/"
+	@echo "- Login: http://localhost:8000/auth/login/"
+	@echo "- Google OAuth: http://localhost:8000/auth/google/login/"
 
 # Maintenance
 clean:
