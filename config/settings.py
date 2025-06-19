@@ -73,12 +73,12 @@ THIRD_PARTY_APPS = [
 
 LOCAL_APPS = [
     "src.apps.accounts",
-    "src.apps.cart",
-    "src.apps.catalog",
-    "src.apps.loyalty",
-    "src.apps.orders",
-    "src.apps.reviews",
-    "src.apps.wishlist",
+    # "src.apps.cart",
+    # "src.apps.catalog",
+    # "src.apps.loyalty",
+    # "src.apps.orders",
+    # "src.apps.reviews",
+    # "src.apps.wishlist",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
