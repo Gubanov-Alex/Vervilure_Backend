@@ -79,26 +79,59 @@ class EmailTemplateRenderer:
         Returns:
             Tuple of (html_content, text_content)
         """
+        # Ensure context contains only simple types that templates can handle
+        safe_context = self._sanitize_context(context)
+
         try:
             template_path = f"{self.base_path}/{template_name}.html"
             template = get_template(template_path)
-            html_content = template.render(context)
+            html_content = template.render(safe_context)
             text_content = strip_tags(html_content)
             return html_content, text_content
         except TemplateDoesNotExist:
             logger.warning(f"Template {template_name} not found, using fallback")
-            return self._render_fallback(context)
+            return self._render_fallback(safe_context)
+        except Exception as e:
+            logger.error(f"Template rendering error: {e}", exc_info=True)
+            return self._render_fallback(safe_context)
+
+    def _sanitize_context(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Ensure context only contains template-safe values."""
+        safe_context = {}
+        for key, value in context.items():
+            # Convert complex objects to strings or simple types
+            if isinstance(value, (str, int, float, bool)):
+                safe_context[key] = value
+            elif isinstance(value, dict):
+                # Flatten dict to avoid nested access issues
+                for sub_key, sub_value in value.items():
+                    safe_key = f"{key}_{sub_key}"
+                    if isinstance(sub_value, (str, int, float, bool)):
+                        safe_context[safe_key] = sub_value
+                    else:
+                        safe_context[safe_key] = str(sub_value)
+            elif hasattr(value, "__dict__"):
+                # Convert objects to string representation
+                safe_context[key] = str(value)
+            else:
+                safe_context[key] = str(value)
+
+        return safe_context
 
     def _render_fallback(self, context: Dict[str, Any]) -> tuple[str, str]:
         """Generate fallback email content when template is missing."""
+        site_name = context.get("site_name", "Test Site")
+        test_message = context.get("test_message", "This is a test email.")
+        timestamp = context.get("timestamp", timezone.now().strftime("%Y-%m-%d %H:%M:%S"))
+
         fallback_html = f"""
         <!DOCTYPE html>
         <html>
         <head><title>Test Email</title></head>
         <body>
-            <h1>{context.get('site_name', 'Test Site')}</h1>
-            <p>{context.get('test_message', 'This is a test email.')}</p>
-            <p><strong>Timestamp:</strong> {context.get('timestamp')}</p>
+            <h1>{site_name}</h1>
+            <p>{test_message}</p>
+            <p><strong>Timestamp:</strong> {timestamp}</p>
             <hr>
             <p><em>This is a fallback template.</em></p>
         </body>
@@ -170,14 +203,19 @@ class EmailTester:
             EmailTestResult with operation details
         """
         try:
-            # Prepare context with defaults
+            # Prepare context with defaults - ensure all values are template-safe
             email_context = {
-                "site_name": self.config.site_name,
+                "site_name": str(self.config.site_name),
                 "test_message": "This is a test email from Vervilure development environment!",
                 "timestamp": timezone.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "recipient": to_email,
-                **(context or {}),
+                "recipient": str(to_email),
             }
+
+            # Safely merge additional context
+            if context:
+                for key, value in context.items():
+                    # Ensure values are template-safe strings
+                    email_context[key] = str(value) if not isinstance(value, (str, int, float, bool)) else value
 
             # Render email content
             html_content, text_content = self.template_renderer.render_email(template_name, email_context)
@@ -188,7 +226,7 @@ class EmailTester:
             email = EmailMultiAlternatives(
                 subject=subject,
                 body=text_content,
-                from_email=settings.DEFAULT_FROM_EMAIL,
+                from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@example.com"),
                 to=[to_email],
             )
             email.attach_alternative(html_content, "text/html")
@@ -204,7 +242,7 @@ class EmailTester:
                     details={
                         "template_used": f"{self.config.template_base_path}/{template_name}.html",
                         "recipient": to_email,
-                        "subject": subject,
+                        "email_subject": subject,
                     },
                 )
             else:
@@ -233,6 +271,7 @@ class EmailTester:
             # Create proper request object using RequestFactory
             factory = RequestFactory()
             request = factory.get("/")
+            request.user = user  # Add user to request
 
             # Set site information properly
             try:
@@ -250,7 +289,13 @@ class EmailTester:
             logger.info(success_msg)
 
             return EmailTestResult(
-                success=True, message=success_msg, details={"user_email": user.email, "user_id": user.id}
+                success=True,
+                message=success_msg,
+                details={
+                    "user_email": user.email,
+                    "user_id": user.id,
+                    "user_name": f"{user.first_name} {user.last_name}".strip(),
+                },
             )
 
         except Exception as e:
@@ -287,7 +332,13 @@ class EmailTester:
         # Test user creation and verification email
         try:
             user, created = User.objects.get_or_create(
-                email=test_email, defaults={"first_name": "Test", "last_name": "User", "is_active": True}
+                email=test_email,
+                defaults={
+                    "first_name": "Test",
+                    "last_name": "User",
+                    "is_active": True,
+                    "username": test_email.split("@")[0],  # Generate username from email
+                },
             )
 
             results["user_created"] = created

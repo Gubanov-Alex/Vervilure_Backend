@@ -71,7 +71,7 @@ makemigrations:
 	docker-compose exec web poetry run python manage.py makemigrations
 
 test:
-	docker-compose exec web poetry run python manage.py test
+	docker-compose exec web poetry run pytest -v
 
 superuser:
 	docker-compose exec web poetry run python manage.py createsuperuser
@@ -107,10 +107,7 @@ setup-docker:
 
 # Testing and Quality
 test-coverage:
-	@echo "Running tests with coverage..."
-	docker-compose exec web poetry run coverage run --source='.' manage.py test
-	docker-compose exec web poetry run coverage html
-	@echo "Coverage report generated in htmlcov/"
+	docker-compose exec web poetry run pytest --cov=src --cov-report=html --cov-report=term
 
 
 lint:
@@ -279,3 +276,5 @@ info:
 	@echo "  Django: http://localhost:8000"
 	@echo "  PostgreSQL: localhost:5490"
 	@echo "  Redis: localhost:6379"
+test-django:
+	docker-compose exec web poetry run python manage.py test

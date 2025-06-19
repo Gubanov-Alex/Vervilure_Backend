@@ -25,7 +25,7 @@ if IS_CI:
     # CI environment gets config from GitHub Actions env
     pass
 elif os.path.exists(".env"):
-    load_dotenv(".env")
+    load_dotenv(".env.docker " if IS_LOCAL_DOCKER else ".env")
 else:
     load_dotenv(".env_default")
 

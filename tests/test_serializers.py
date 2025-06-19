@@ -14,7 +14,6 @@ from src.apps.accounts.serializers import (
     UserRegistrationSerializer,
 )
 
-# Test serializers for user registration, login, Google OAuth, profile, and address
 User = get_user_model()
 
 
@@ -208,7 +207,7 @@ class TestGoogleOAuthSerializer:
         # Only test format validation, not full OAuth flow
         assert serializer.initial_data["access_token"].strip() == "valid_token"
 
-    @patch("apps.accounts.utils.oauth_validators.GoogleOAuthValidator.validate_token")
+    @patch("src.apps.accounts.utils.oauth_validators.GoogleOAuthValidator.validate_token")
     def test_valid_google_token_new_user(self, mock_validate):
         """Test valid Google token with new user creation"""
         mock_validate.return_value = (
@@ -234,7 +233,7 @@ class TestGoogleOAuthSerializer:
         assert "access" in validated_data
         assert "refresh" in validated_data
 
-    @patch("apps.accounts.utils.oauth_validators.GoogleOAuthValidator.validate_token")
+    @patch("src.apps.accounts.utils.oauth_validators.GoogleOAuthValidator.validate_token")
     def test_valid_google_token_existing_user(self, mock_validate):
         """Test valid Google token with existing user"""
         existing_user = User.objects.create_user(
@@ -262,7 +261,7 @@ class TestGoogleOAuthSerializer:
         assert validated_data["user"].id == existing_user.id
         assert validated_data["user"].google_id == "123456789"
 
-    @patch("apps.accounts.utils.oauth_validators.GoogleOAuthValidator.validate_token")
+    @patch("src.apps.accounts.utils.oauth_validators.GoogleOAuthValidator.validate_token")
     def test_invalid_google_token(self, mock_validate):
         """Test invalid Google token"""
         mock_validate.return_value = (False, None, "Invalid token")
@@ -273,7 +272,7 @@ class TestGoogleOAuthSerializer:
         assert not serializer.is_valid()
         assert "access_token" in serializer.errors
 
-    @patch("apps.accounts.utils.oauth_validators.GoogleOAuthValidator.validate_token")
+    @patch("src.apps.accounts.utils.oauth_validators.GoogleOAuthValidator.validate_token")
     def test_unverified_google_email(self, mock_validate):
         """Test Google token with unverified email"""
         mock_validate.return_value = (
@@ -288,10 +287,10 @@ class TestGoogleOAuthSerializer:
         assert not serializer.is_valid()
         assert "access_token" in serializer.errors
 
-    @patch("apps.accounts.utils.oauth_validators.GoogleOAuthValidator.validate_token")
+    @patch("src.apps.accounts.utils.oauth_validators.GoogleOAuthValidator.validate_token")
     def test_inactive_user_google_oauth(self, mock_validate):
-        """Test Google OAuth with an inactive user"""
-        self.user = User.objects.create_user(
+        """Test Google OAuth with inactive user"""
+        User.objects.create_user(
             email="inactive@gmail.com", password="temp_pass", first_name="Inactive", last_name="User", is_active=False
         )
 
