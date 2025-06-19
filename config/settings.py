@@ -129,16 +129,13 @@ def get_database_config() -> Dict[str, Any]:
     """Get database configuration with environment-specific optimizations."""
     database_url = os.environ.get("DATABASE_URL")
 
-    # DEBUG: Show what we got from environment
-    if IS_CI:
-        print(f"[DEBUG] Original DATABASE_URL: {database_url}")
-        print(f"[DEBUG] DB_HOST from env: {os.environ.get('DB_HOST')}")
-        print(f"[DEBUG] DB_PORT from env: {os.environ.get('DB_PORT')}")
+    base_options = {
+        "connect_timeout": 10,
+        "application_name": "vervilure_backend",
+    }
 
-    # CRITICAL: Force CI environment to ignore DATABASE_URL completely
     if IS_CI:
-        print("[DEBUG] CI detected: Using individual DB settings, ignoring DATABASE_URL")
-        # Force individual settings for CI
+        print("[DEBUG] CI detected: Using individual DB settings")
         return {
             "default": {
                 "ENGINE": "django.db.backends.postgresql",
@@ -148,30 +145,28 @@ def get_database_config() -> Dict[str, Any]:
                 "HOST": os.environ.get("DB_HOST", "localhost"),
                 "PORT": os.environ.get("DB_PORT", "5433"),
                 "OPTIONS": {
+                    **base_options,
                     "sslmode": "disable",
-                    "connect_timeout": 10,
-                    "options": "-c default_transaction_isolation=read_committed",
+                    "options": "-c fsync=off -c synchronous_commit=off",
                 },
-                "CONN_MAX_AGE": 600,
-                "CONN_HEALTH_CHECKS": True,
+                "CONN_MAX_AGE": 0,
+                "CONN_HEALTH_CHECKS": False,
+                "ATOMIC_REQUESTS": True,
             }
         }
 
-    # Non-CI environments can use DATABASE_URL
     if database_url:
         config = dj_database_url.parse(database_url, conn_max_age=600)
         config["OPTIONS"] = {
+            **base_options,
             "sslmode": "prefer" if not DEBUG else "disable",
-            "connect_timeout": 10,
+            "options": "-c shared_preload_libraries=pg_stat_statements",
         }
-        if IS_TESTING:
-            config["OPTIONS"]["options"] = "-c default_transaction_isolation=read_committed"
         return {"default": config}
 
-    # Individual environment variables fallback
     db_password = os.environ.get("DB_PASSWORD")
     if not db_password and not IS_TESTING:
-        raise ValueError("DB_PASSWORD is required when DATABASE_URL is not provided")
+        raise ValueError("DB_PASSWORD is required")
 
     return {
         "default": {
@@ -182,10 +177,11 @@ def get_database_config() -> Dict[str, Any]:
             "HOST": os.environ.get("DB_HOST", "localhost"),
             "PORT": os.environ.get("DB_PORT", "5432"),
             "OPTIONS": {
+                **base_options,
                 "sslmode": "disable" if DEBUG else "prefer",
-                "connect_timeout": 10,
+                "options": "-c log_statement=all" if DEBUG else "",
             },
-            "CONN_MAX_AGE": 600,
+            "CONN_MAX_AGE": 300 if DEBUG else 600,
             "CONN_HEALTH_CHECKS": True,
         }
     }
