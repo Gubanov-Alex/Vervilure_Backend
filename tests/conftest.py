@@ -2,8 +2,9 @@
 
 import os
 import sys
-import pytest
+
 import django
+import pytest
 from django.conf import settings
 
 # Add project root to a Python path
