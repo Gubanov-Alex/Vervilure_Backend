@@ -277,7 +277,7 @@ jobs:
       - name: Run tests with coverage
         run: |
           export PYTHONPATH=$PWD
-          poetry run coverage run --source=src manage.py test
+          poetry run pytest --ds=config.settings --reuse-db -v
           poetry run coverage report -m --fail-under=70
           poetry run coverage xml
 
