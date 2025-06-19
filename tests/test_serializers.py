@@ -290,8 +290,8 @@ class TestGoogleOAuthSerializer:
 
     @patch("apps.accounts.utils.oauth_validators.GoogleOAuthValidator.validate_token")
     def test_inactive_user_google_oauth(self, mock_validate):
-        """Test Google OAuth with inactive user"""
-        inactive_user = User.objects.create_user(
+        """Test Google OAuth with an inactive user"""
+        self.user = User.objects.create_user(
             email="inactive@gmail.com", password="temp_pass", first_name="Inactive", last_name="User", is_active=False
         )
 

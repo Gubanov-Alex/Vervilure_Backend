@@ -227,7 +227,7 @@ class TestAuthViewSet:
 
     def test_logout_invalid_token(self):
         """Test logout with invalid refresh token"""
-        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer invalid_token")
+        self.client.credentials(HTTP_AUTHORIZATION="Bearer invalid_token")
 
         data = {"refresh": "invalid_refresh_token"}
         response = self.client.post("/auth/logout/", data, format="json")
@@ -380,7 +380,7 @@ class TestUserViewSet:
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
         response = self.client.post("/users/change-password/", {})
-        assert response.status_status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
 @pytest.mark.django_db
