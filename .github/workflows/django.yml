@@ -6,10 +6,10 @@ permissions:
 
 on:
   push:
-    branches: [ "dev", "deploy", "feat/docker_update" ]
+    branches: [ "dev", "main", "feat/User_autorization" ]
   pull_request:
-    branches: [ "dev", "deploy", "docker_update" ]
-  workflow_dispatch:  # Ручной запуск
+    branches: [ "dev", "main", ]
+  workflow_dispatch:
     inputs:
       debug_enabled:
         description: 'Enable debug mode'
@@ -27,23 +27,23 @@ jobs:
 
     services:
       postgres:
-        image: postgres:14
+        image: postgres:15-alpine
         env:
           POSTGRES_USER: admin
           POSTGRES_PASSWORD: admin_password
           POSTGRES_DB: test_db
         ports:
-          - 5440:5432  # Стандартный порт
+          - 5433:5432
         options: >-
-          --health-cmd "pg_isready -U admin"
+          --health-cmd "pg_isready -U admin -d test_db"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
 
       redis:
-        image: redis:6
+        image: redis:7-alpine
         ports:
-          - 6390:6379  # Стандартный порт
+          - 6380:6379
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 10s
@@ -51,15 +51,36 @@ jobs:
           --health-retries 5
 
     env:
-      DATABASE_URL: postgres://admin:admin_password@localhost:5440/test_db
-      CELERY_BROKER_URL: redis://localhost:6390/0
-      CELERY_RESULT_BACKEND: redis://localhost:6390/0
+      # CI Environment Detection
+      ENVIRONMENT: ci
+
+      # Database Configuration (individual settings, NO DATABASE_URL)
+      DB_ENGINE: django.db.backends.postgresql
+      DB_HOST: localhost
+      DB_PORT: 5433
+      DB_NAME: test_db
+      DB_USER: admin
+      DB_PASSWORD: admin_password
+
+      # Redis Configuration
+      REDIS_HOST: localhost
+      REDIS_PORT: 6380
+      CELERY_BROKER_URL: redis://localhost:6380/0
+      CELERY_RESULT_BACKEND: redis://localhost:6380/0
+
+      # Security
+      SECRET_KEY: django-insecure-ci-test-key
+      DEBUG: "True"
+      ALLOWED_HOSTS: localhost,127.0.0.1,testserver
+
+      # Email
+      EMAIL_BACKEND: django.core.mail.backends.locmem.EmailBackend
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Cache Poetry & pip
-        uses: actions/cache@v4  # Обновленная версия
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cache/pypoetry
@@ -69,7 +90,7 @@ jobs:
             ${{ runner.os }}-poetry-
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5  # Обновленная версия
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -86,28 +107,50 @@ jobs:
         run: |
           poetry install --no-root
 
-      - name: Prepare environment
+      - name: Install system dependencies
         run: |
-          cp .env_default .env
-          cat >> .env << EOF
-          SECRET_KEY=django-insecure-key-for-testing-$(date +%s)
-          DEBUG=True
-          DATABASE_URL=postgres://admin:admin_password@localhost:5440/test_db
-          CELERY_BROKER_URL=redis://localhost:6390/0
-          CELERY_RESULT_BACKEND=redis://localhost:6390/0
-          REDIS_HOST=localhost
-          REDIS_PORT=6390
-          DB_HOST=localhost
-          DB_PORT=5440
-          DB_NAME=test_db
-          DB_USER=admin
-          DB_PASSWORD=admin_password
-          EOF
-          cat .env  # Выводим содержимое для отладки
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client redis-tools
 
-      - name: Check security vulnerabilities
+      - name: Wait for services
         run: |
-          poetry run safety check --json || true  # Не фейлим на vulnerabilities
+          echo "Waiting for PostgreSQL..."
+          timeout 60 bash -c 'until pg_isready -h localhost -p 5433 -U admin; do sleep 1; done'
+          echo "Waiting for Redis..."
+          timeout 60 bash -c 'until redis-cli -h localhost -p 6380 ping; do sleep 1; done'
+          echo "Services are ready!"
+
+      - name: Debug environment variables
+        run: |
+          echo "=== Environment Variables Debug ==="
+          echo "DATABASE_URL: ${DATABASE_URL:-NOT_SET}"
+          echo "DB_HOST: ${DB_HOST:-NOT_SET}"
+          echo "DB_PORT: ${DB_PORT:-NOT_SET}"
+          echo "DB_NAME: ${DB_NAME:-NOT_SET}"
+          echo "ENVIRONMENT: ${ENVIRONMENT:-NOT_SET}"
+          echo "GITHUB_ACTIONS: ${GITHUB_ACTIONS:-NOT_SET}"
+          echo "=== End Debug ==="    
+
+      - name: Verify database connection
+        run: |
+          PGPASSWORD=admin_password psql -h localhost -p 5433 -U admin -d test_db -c "SELECT version();"
+
+      - name: Show Django configuration
+        run: |
+          export PYTHONPATH=$PWD
+          poetry run python -c "
+          import os
+          import django
+          from django.conf import settings
+          os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
+          django.setup()
+          print(f'Final database config: {settings.DATABASES[\"default\"]}')
+          print(f'Cache config: {settings.CACHES[\"default\"][\"BACKEND\"]}')
+          "
+
+      - name: Run security checks
+        run: |
+          poetry run safety check --json || true
 
       - name: Run code quality checks
         run: |
@@ -117,29 +160,21 @@ jobs:
 
       - name: Type checking
         run: |
-          poetry add mypy django-stubs --group dev
           poetry run mypy src/ --ignore-missing-imports || true
 
       - name: Run Django system checks
         run: |
           export PYTHONPATH=$PWD
-          poetry run python manage.py check --deploy
+          poetry run python manage.py check
 
       - name: Run Django migrations
         run: |
           export PYTHONPATH=$PWD
-          echo "Database URL: $DATABASE_URL"
-          echo "Current directory: $(pwd)"
-          echo "Python path: $PYTHONPATH"
-          echo "Environment variables:"
-          env | grep -E 'DATABASE|POSTGRES|DB_'
-          poetry run python -c "import os; print('DATABASE_URL from Python:', os.environ.get('DATABASE_URL'))"
           poetry run python manage.py migrate --noinput
 
       - name: Run Django tests
         run: |
           export PYTHONPATH=$PWD
-          # Добавляем дополнительное время для запуска тестов
           poetry run python manage.py test --verbosity=2 --parallel --keepdb
 
   coverage:
@@ -148,21 +183,28 @@ jobs:
 
     services:
       postgres:
-        image: postgres:14
+        image: postgres:15-alpine
         env:
           POSTGRES_USER: admin
           POSTGRES_PASSWORD: admin_password
           POSTGRES_DB: test_db
         ports:
-          - 5440:5432
+          - 5433:5432
         options: >-
-          --health-cmd "pg_isready -U admin"
+          --health-cmd "pg_isready -U admin -d test_db"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
 
     env:
-      DATABASE_URL: postgres://admin:admin_password@localhost:5440/test_db
+      ENVIRONMENT: ci
+      DB_HOST: localhost
+      DB_PORT: 5433
+      DB_NAME: test_db
+      DB_USER: admin
+      DB_PASSWORD: admin_password
+      SECRET_KEY: django-insecure-coverage-test-key
+      DEBUG: "True"
 
     steps:
       - uses: actions/checkout@v4
@@ -194,16 +236,20 @@ jobs:
       - name: Install dependencies
         run: |
           poetry install --no-root
-          poetry add coverage[toml] --group dev
 
-      - name: Prepare environment
+      - name: Install PostgreSQL client
         run: |
-          cp .env_default .env   
-          cat >> .env << EOF
-          SECRET_KEY=django-insecure-key-for-testing-$(date +%s)
-          DEBUG=True
-          DATABASE_URL=${{ env.DATABASE_URL }}
-          EOF
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Wait for PostgreSQL
+        run: |
+          timeout 60 bash -c 'until pg_isready -h localhost -p 5433 -U admin; do sleep 1; done'
+
+      - name: Run migrations for coverage
+        run: |
+          export PYTHONPATH=$PWD
+          poetry run python manage.py migrate --noinput
 
       - name: Run tests with coverage
         run: |
@@ -211,3 +257,11 @@ jobs:
           poetry run coverage run --source=src manage.py test
           poetry run coverage report -m --fail-under=80
           poetry run coverage xml
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        if: success()
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella

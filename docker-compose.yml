@@ -3,6 +3,7 @@ version: '3.8'
 services:
   db:
     image: postgres:15-alpine
+    container_name: vervilure_db
     environment:
       POSTGRES_DB: test_db
       POSTGRES_USER: admin
@@ -10,64 +11,113 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5490:5432"  # Ваш порт 5490 -> внутренний 5432
+      - "5490:5432"  # External port 5490 -> internal 5432
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U admin -d test_db"]
       interval: 30s
       timeout: 10s
       retries: 5
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
+    container_name: vervilure_redis
     ports:
-      - "6379:6379"
+      - "6390:6379"  # External port 6390 -> internal 6379
     volumes:
       - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: vervilure_mailpit
+    restart: unless-stopped
+    volumes:
+      - mailpit_data:/data
+    ports:
+      - "8025:8025"  # Web UI
+      - "1025:1025"  # SMTP
+    environment:
+      MP_MAX_MESSAGES: 5000
+      MP_DATABASE: /data/mailpit.db
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+      MP_VERBOSE: 0
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8025/api/v1/info"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   web:
     build: .
+    container_name: vervilure_web
     ports:
       - "8000:8000"
-      - "5678:5678"  # PyCharm debugger
+      - "5678:5678"
     volumes:
       - .:/app
-    environment:
-      - DEBUG=True
-      - DATABASE_URL=postgresql://admin:admin_password@db:5432/test_db
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - SECRET_KEY=${SECRET_KEY}
-      - ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
-      - PYTHONUNBUFFERED=1
+      - logs_data:/app/logs
+      - media_data:/app/media
+    env_file:
+      - .env.docker
     depends_on:
       db:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
+      mailpit:
+        condition: service_healthy
     stdin_open: true
     tty: true
+    restart: unless-stopped
 
   celery:
     build: .
-    command: celery -A config worker --loglevel=info
+    container_name: vervilure_celery
+    command: celery -A config worker --loglevel=info --concurrency=2
     volumes:
       - .:/app
-    environment:
-      - DEBUG=True
-      - DATABASE_URL=postgresql://admin:admin_password@db:5432/test_db
-      - REDIS_HOST=redis
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - SECRET_KEY=${SECRET_KEY}
-      - PYTHONUNBUFFERED=1
+      - logs_data:/app/logs
+    env_file:
+      - .env.docker
     depends_on:
       db:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Optional: Celery Beat for scheduled tasks
+  celery-beat:
+    build: .
+    container_name: vervilure_celery_beat
+    command: celery -A config beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    volumes:
+      - .:/app
+      - ./logs:/app/logs
+    env_file:
+      - .env.docker
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles: ["beat"]  # Optional service, start with --profile beat
 
 volumes:
   postgres_data:
   redis_data:
+  mailpit_data:
+  logs_data:
+  media_data:
+
+networks:
+  default:
+    name: vervilure_network
