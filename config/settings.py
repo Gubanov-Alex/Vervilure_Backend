@@ -422,8 +422,9 @@ MAILPIT_URL = os.environ.get("MAILPIT_URL", "http://mailpit:8025/api/v1/info")
 SITE_NAME = os.environ.get("SITE_NAME", "Vervilure")
 SERVER_EMAIL = globals().get("DEFAULT_FROM_EMAIL", "Vervilure <noreply@vervilure.local>")
 
-# Frontend Configuration
-FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+# Configuration for Backend and Frontend URLs
+BACKEND_URL = os.environ.get("BACKEND_URL", default="http://localhost:8000")
+FRONTEND_URL = os.environ.get("FRONTEND_URL", default="http://localhost:3000")
 
 # Stripe Configuration
 STRIPE_PUBLIC_KEY = os.environ.get("STRIPE_PUBLIC_KEY", "")

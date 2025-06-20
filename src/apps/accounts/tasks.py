@@ -14,12 +14,7 @@ logger = logging.getLogger(__name__)
 
 @shared_task(bind=True, max_retries=3)
 def send_verification_email(self, user_id: int) -> Optional[str]:
-    """
-    Send email verification with proper token generation.
-
-    Architecture: Regenerates token on each send for security,
-    implements proper error handling and retry logic.
-    """
+    """Send email verification with backend verification URL."""
     try:
         user = User.objects.get(id=user_id)
 
@@ -27,14 +22,10 @@ def send_verification_email(self, user_id: int) -> Optional[str]:
             logger.info(f"User {user.email} already verified")
             return "User already verified"
 
-        # Generate fresh token for security
+        # Generate fresh token
         user.regenerate_verification_token()
 
-        verification_url = (
-            # f"{settings.FRONTEND_URL}/verify-email/" open for production
-            "http://localhost:8000/api/v1/auth/verify_email/"
-            f"{user.email_verification_token}/"
-        )
+        verification_url = f"{settings.BACKEND_URL}/verify-email/" f"{user.email_verification_token}/"
 
         context = {
             "user": user,
@@ -59,8 +50,8 @@ def send_verification_email(self, user_id: int) -> Optional[str]:
             f"Verification email sent: {user.email}",
             extra={
                 "user_id": user.id,
+                "verification_url": verification_url,
                 "token_id": str(user.email_verification_token)[:8] + "...",
-                "sent_at": user.email_verification_sent_at.isoformat(),
             },
         )
         return f"Verification email sent to {user.email}"

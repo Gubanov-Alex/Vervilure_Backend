@@ -72,8 +72,8 @@ class JWTAuthTester:
         """Test access to a protected endpoint using JWT with the correct URL resolution."""
         try:
             profile_urls = [
-                f"{self.base_url}/users/me/",
-                f"{self.base_url}/accounts/me/",
+                f"{self.base_url}/users/profile/",
+                f"{self.base_url}/accounts/",
             ]
 
             profile_url = None
@@ -170,7 +170,8 @@ class JWTAuthTester:
             access_token = self._get_access_token_for_user()
 
             logout_urls = [
-                f"{self.base_url}/auth/logout/",
+                # f"{self.base_url}/users/auth/logout/",
+                 "/api/v1/users/auth/logout/",
             ]
 
             logout_url = None

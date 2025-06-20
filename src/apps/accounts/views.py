@@ -2,9 +2,12 @@ import logging
 import uuid
 from datetime import datetime
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.db import transaction
+from django.http import HttpResponsePermanentRedirect, HttpResponseRedirect
+from django.shortcuts import redirect
 from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import never_cache
@@ -58,6 +61,7 @@ class AuthViewSet(GenericViewSet):
     @swagger_auto_schema(
         operation_description="Register a new user with email verification",
         request_body=UserRegistrationSerializer,
+        tags=["Authentication"],
         responses={
             201: openapi.Response(
                 description="User created successfully",
@@ -163,6 +167,7 @@ class AuthViewSet(GenericViewSet):
     @swagger_auto_schema(
         operation_description="Authenticate with Google OAuth token",
         request_body=GoogleOAuthSerializer,
+        tags=["Authentication"],
         responses={
             200: openapi.Response(
                 description="Google authentication successful",
@@ -281,6 +286,7 @@ class AuthViewSet(GenericViewSet):
     @swagger_auto_schema(
         operation_description="Authenticate user with enhanced security",
         request_body=UserLoginSerializer,
+        tags=["Authentication"],
         responses={
             200: openapi.Response(
                 description="Login successful",
@@ -363,6 +369,7 @@ class AuthViewSet(GenericViewSet):
 
     @swagger_auto_schema(
         operation_description="Secure logout with token blacklisting",
+        tags=["Authentication"],
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             properties={"refresh": openapi.Schema(type=openapi.TYPE_STRING, description="Refresh token to blacklist")},
@@ -457,73 +464,9 @@ class AuthViewSet(GenericViewSet):
             )
             return Response({"error": "Invalid token."}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Private helper methods for security operations
-    def _get_client_ip(self, request) -> str:
-        """Extract and validate client IP address."""
-        x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
-        if x_forwarded_for:
-            ip = x_forwarded_for.split(",")[0].strip()
-        else:
-            ip = request.META.get("REMOTE_ADDR", "0.0.0.0")
-
-        # Basic IP validation
-        try:
-            import ipaddress
-
-            ipaddress.ip_address(ip)
-            return ip
-        except ValueError:
-            logger.warning(f"Invalid IP address: {ip}")
-            return "0.0.0.0"
-
-    def _is_registration_blocked(self, ip: str) -> bool:
-        """Check if registration is blocked for IP."""
-        cache_key = f"registration_attempts_{ip}"
-        attempts = cache.get(cache_key, 0)
-        return attempts >= 50  # Max 5 registrations per hour
-
-    def _is_login_blocked(self, ip: str, email: str) -> bool:
-        """Check if login is blocked for IP/email combination."""
-        cache_key = f"login_attempts_{ip}_{email}"
-        attempts = cache.get(cache_key, 0)
-        return attempts >= 50  # Max 5 failed attempts per hour
-
-    def _increment_registration_attempts(self, ip: str) -> None:
-        """Increment registration attempt counter."""
-        cache_key = f"registration_attempts_{ip}"
-        current = cache.get(cache_key, 0)
-        cache.set(cache_key, current + 1, 3600)  # 1 hour
-
-    def _handle_failed_login(self, ip: str, email: str) -> None:
-        """Handle failed login attempt."""
-        cache_key = f"login_attempts_{ip}_{email}"
-        current = cache.get(cache_key, 0)
-        cache.set(cache_key, current + 1, 3600)  # 1 hour
-
-        logger.warning(
-            f"Failed login attempt: {email}",
-            extra={"email": email, "ip_address": ip, "attempts": current + 1, "action": "login_failed"},
-        )
-
-    def _clear_failed_attempts(self, ip: str, email: str) -> None:
-        """Clear failed attempt counters."""
-        cache_key = f"login_attempts_{ip}_{email}"
-        cache.delete(cache_key)
-
-    def _update_login_metadata(self, user: User, ip: str) -> None:
-        """Update user login metadata."""
-        user.last_login_ip = ip
-        user.save(update_fields=["last_login_ip", "last_login"])
-
-    def _log_failed_registration(self, ip: str, errors: dict) -> None:
-        """Log failed registration attempt."""
-        logger.warning(
-            f"Registration validation failed from IP {ip}",
-            extra={"ip_address": ip, "errors": errors, "action": "registration_validation_failed"},
-        )
-
     @swagger_auto_schema(
         operation_description="Request password reset email",
+        tags=["Authentication"],
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             properties={"email": openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_EMAIL)},
@@ -592,6 +535,7 @@ class AuthViewSet(GenericViewSet):
 
     @swagger_auto_schema(
         operation_description="Confirm password reset with token",
+        tags=["Authentication"],
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             properties={
@@ -657,8 +601,9 @@ class AuthViewSet(GenericViewSet):
             return Response({"error": "Invalid or expired token"}, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
-        operation_description="Verify email address with UUID token",
+        operation_description="Verify email address with UUID token (API endpoint)",
         request_body=EmailVerificationSerializer,
+        tags=["Authentication"],
         responses={
             200: EmailVerificationResponseSerializer,
             400: "Invalid or expired token",
@@ -668,10 +613,8 @@ class AuthViewSet(GenericViewSet):
     @action(detail=False, methods=["post"])
     def verify_email(self, request) -> Response:
         """
-        Verify user email with secure UUID token.
-
-        Architecture: Uses UUID tokens instead of signed data for better security
-        and frontend compatibility. Implements proper state validation.
+        Verify user email with secure UUID token via POST.
+        Used by API clients (mobile apps, SPAs with AJAX).
         """
         serializer = EmailVerificationSerializer(data=request.data)
         if not serializer.is_valid():
@@ -684,7 +627,6 @@ class AuthViewSet(GenericViewSet):
             with transaction.atomic():
                 user = User.objects.select_for_update().get(email_verification_token=token)
 
-                # Double-check in transaction for race conditions
                 if user.is_email_verified:
                     return Response({"message": "Email already verified"}, status=status.HTTP_409_CONFLICT)
 
@@ -697,7 +639,7 @@ class AuthViewSet(GenericViewSet):
 
                 # Mark as verified and invalidate token
                 user.is_email_verified = True
-                user.is_active = True  # Activate user account
+                user.is_active = True
                 user.email_verification_token = uuid.uuid4()  # Invalidate token
                 user.save(update_fields=["is_email_verified", "is_active", "email_verification_token"])
 
@@ -721,7 +663,73 @@ class AuthViewSet(GenericViewSet):
             return Response({"error": "Invalid verification token"}, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
+        operation_description="Verify email via GET request from email link",
+        tags=["Authentication"],
+        manual_parameters=[
+            openapi.Parameter(
+                "token",
+                openapi.IN_PATH,
+                description="Email verification token",
+                type=openapi.TYPE_STRING,
+                format=openapi.FORMAT_UUID,
+            )
+        ],
+        responses={302: "Redirect to frontend with status", 400: "Invalid token - redirect to error page"},
+    )
+    @action(detail=False, methods=["get"], url_path="verify-email/(?P<token>[^/.]+)")
+    def verify_email_link(self, request, token=None) -> HttpResponseRedirect | HttpResponsePermanentRedirect:
+        """
+        Verify email via GET request from email link.
+        Redirects to frontend with verification status.
+        """
+        client_ip = self._get_client_ip(request)
+
+        try:
+            # Validate UUID format
+            token_uuid = uuid.UUID(str(token))
+        except (ValueError, TypeError):
+            logger.warning(f"Invalid token format in email verification: {token}", extra={"ip_address": client_ip})
+            return redirect(f"{settings.FRONTEND_URL}/verify-email/error?reason=invalid_format")
+
+        try:
+            with transaction.atomic():
+                user = User.objects.select_for_update().get(email_verification_token=token_uuid)
+
+                if user.is_email_verified:
+                    logger.info(
+                        f"Email already verified (GET): {user.email}",
+                        extra={"user_id": user.id, "ip_address": client_ip},
+                    )
+                    return redirect(f"{settings.FRONTEND_URL}/verify-email/success?already_verified=true")
+
+                if not user.is_verification_token_valid():
+                    logger.warning(
+                        f"Expired verification token used (GET): {user.email}",
+                        extra={"user_id": user.id, "ip_address": client_ip},
+                    )
+                    return redirect(f"{settings.BACKEND_URL}/verify-email/error?reason=expired")
+
+                # Mark as verified and invalidate token
+                user.is_email_verified = True
+                user.is_active = True
+                user.email_verification_token = uuid.uuid4()
+                user.save(update_fields=["is_email_verified", "is_active", "email_verification_token"])
+
+                logger.info(
+                    f"Email verified successfully (GET): {user.email}",
+                    extra={"user_id": user.id, "ip_address": client_ip},
+                )
+
+                # Redirect to success page
+                return redirect(f"{settings.FRONTEND_URL}/verify-email/success")
+
+        except User.DoesNotExist:
+            logger.warning(f"Invalid verification token (GET): {token}", extra={"ip_address": client_ip})
+            return redirect(f"{settings.FRONTEND_URL}/verify-email/error?reason=invalid_token")
+
+    @swagger_auto_schema(
         operation_description="Resend email verification",
+        tags=["Authentication"],
         responses={
             200: "Verification email sent",
             400: "Email already verified or user not found",
@@ -742,7 +750,7 @@ class AuthViewSet(GenericViewSet):
                 status=status.HTTP_429_TOO_MANY_REQUESTS,
             )
 
-        if user.is_active:
+        if user.is_email_verified:
             return Response({"message": "Email is already verified"}, status=status.HTTP_200_OK)
 
         # Set rate limit (5 minutes)
@@ -759,6 +767,71 @@ class AuthViewSet(GenericViewSet):
         )
 
         return Response({"message": "Verification email sent"}, status=status.HTTP_200_OK)
+
+    # Private helper methods for security operations
+    def _get_client_ip(self, request) -> str:
+        """Extract and validate client IP address."""
+        x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+        if x_forwarded_for:
+            ip = x_forwarded_for.split(",")[0].strip()
+        else:
+            ip = request.META.get("REMOTE_ADDR", "0.0.0.0")
+
+        # Basic IP validation
+        try:
+            import ipaddress
+
+            ipaddress.ip_address(ip)
+            return ip
+        except ValueError:
+            logger.warning(f"Invalid IP address: {ip}")
+            return "0.0.0.0"
+
+    def _is_registration_blocked(self, ip: str) -> bool:
+        """Check if registration is blocked for IP."""
+        cache_key = f"registration_attempts_{ip}"
+        attempts = cache.get(cache_key, 0)
+        return attempts >= 25  # Max 5 registrations per hour
+
+    def _is_login_blocked(self, ip: str, email: str) -> bool:
+        """Check if login is blocked for IP/email combination."""
+        cache_key = f"login_attempts_{ip}_{email}"
+        attempts = cache.get(cache_key, 0)
+        return attempts >= 25  # Max 5 failed attempts per hour
+
+    def _increment_registration_attempts(self, ip: str) -> None:
+        """Increment registration attempt counter."""
+        cache_key = f"registration_attempts_{ip}"
+        current = cache.get(cache_key, 0)
+        cache.set(cache_key, current + 1, 3600)  # 1 hour
+
+    def _handle_failed_login(self, ip: str, email: str) -> None:
+        """Handle failed login attempt."""
+        cache_key = f"login_attempts_{ip}_{email}"
+        current = cache.get(cache_key, 0)
+        cache.set(cache_key, current + 1, 3600)  # 1 hour
+
+        logger.warning(
+            f"Failed login attempt: {email}",
+            extra={"email": email, "ip_address": ip, "attempts": current + 1, "action": "login_failed"},
+        )
+
+    def _clear_failed_attempts(self, ip: str, email: str) -> None:
+        """Clear failed attempt counters."""
+        cache_key = f"login_attempts_{ip}_{email}"
+        cache.delete(cache_key)
+
+    def _update_login_metadata(self, user: User, ip: str) -> None:
+        """Update user login metadata."""
+        user.last_login_ip = ip
+        user.save(update_fields=["last_login_ip", "last_login"])
+
+    def _log_failed_registration(self, ip: str, errors: dict) -> None:
+        """Log failed registration attempt."""
+        logger.warning(
+            f"Registration validation failed from IP {ip}",
+            extra={"ip_address": ip, "errors": errors, "action": "registration_validation_failed"},
+        )
 
 
 class UserProfileViewSet(RetrieveModelMixin, UpdateModelMixin, GenericViewSet):
@@ -782,13 +855,18 @@ class UserProfileViewSet(RetrieveModelMixin, UpdateModelMixin, GenericViewSet):
         """Return current authenticated user."""
         return self.request.user
 
-    @swagger_auto_schema(operation_description="Get current user profile", responses={200: UserProfileSerializer})
+    @swagger_auto_schema(
+        operation_description="Get current user profile",
+        tags=["User Management"],
+        responses={200: UserProfileSerializer},
+    )
     def retrieve(self, request, *args, **kwargs) -> Response:
         """Get current user profile information."""
         return super().retrieve(request, *args, **kwargs)
 
     @swagger_auto_schema(
         operation_description="Update user profile",
+        tags=["User Management"],
         request_body=UserProfileSerializer,
         responses={200: UserProfileSerializer},
     )
@@ -805,6 +883,7 @@ class UserProfileViewSet(RetrieveModelMixin, UpdateModelMixin, GenericViewSet):
 
     @swagger_auto_schema(
         operation_description="Change user password securely",
+        tags=["User Management"],
         request_body=PasswordChangeSerializer,
         responses={200: "Password changed successfully", 400: "Validation errors", 429: "Rate limit exceeded"},
     )
@@ -838,7 +917,11 @@ class UserProfileViewSet(RetrieveModelMixin, UpdateModelMixin, GenericViewSet):
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    @swagger_auto_schema(operation_description="Get user addresses", responses={200: UserAddressSerializer(many=True)})
+    @swagger_auto_schema(
+        operation_description="Get user addresses",
+        tags=["User Management"],
+        responses={200: UserAddressSerializer(many=True)},
+    )
     @action(detail=False, methods=["get"])
     def addresses(self, request) -> Response:
         """Get all user addresses with optimized query."""
@@ -848,6 +931,7 @@ class UserProfileViewSet(RetrieveModelMixin, UpdateModelMixin, GenericViewSet):
 
     @swagger_auto_schema(
         operation_description="Add new user address",
+        tags=["User Management"],
         request_body=UserAddressSerializer,
         responses={201: UserAddressSerializer, 400: "Validation errors"},
     )
@@ -877,6 +961,7 @@ class UserProfileViewSet(RetrieveModelMixin, UpdateModelMixin, GenericViewSet):
 
     @swagger_auto_schema(
         operation_description="Update specific user address",
+        tags=["User Management"],
         request_body=UserAddressSerializer,
         responses={200: UserAddressSerializer, 404: "Address not found"},
     )
@@ -902,7 +987,9 @@ class UserProfileViewSet(RetrieveModelMixin, UpdateModelMixin, GenericViewSet):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
-        operation_description="Delete user address", responses={204: "Address deleted", 404: "Address not found"}
+        operation_description="Delete user address",
+        tags=["User Management"],
+        responses={204: "Address deleted", 404: "Address not found"},
     )
     @action(detail=False, methods=["delete"], url_path="addresses/(?P<address_id>[^/.]+)")
     def delete_address(self, request, address_id=None) -> Response:
@@ -923,6 +1010,7 @@ class UserProfileViewSet(RetrieveModelMixin, UpdateModelMixin, GenericViewSet):
 
     @swagger_auto_schema(
         operation_description="Set default user address",
+        tags=["User Management"],
         responses={200: "Default address updated", 404: "Address not found"},
     )
     @action(detail=False, methods=["post"], url_path="addresses/(?P<address_id>[^/.]+)/set-default")
@@ -949,6 +1037,7 @@ class UserProfileViewSet(RetrieveModelMixin, UpdateModelMixin, GenericViewSet):
 
     @swagger_auto_schema(
         operation_description="Delete user account",
+        tags=["User Management"],
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             properties={

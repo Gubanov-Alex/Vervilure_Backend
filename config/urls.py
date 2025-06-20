@@ -6,6 +6,9 @@ from drf_yasg import openapi
 from drf_yasg.views import get_schema_view
 from rest_framework import permissions
 
+# Import for email verification endpoint
+from src.apps.accounts.views import AuthViewSet
+
 # Swagger documentation setup
 schema_view = get_schema_view(
     openapi.Info(
@@ -22,15 +25,16 @@ schema_view = get_schema_view(
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    # API routes - четкое разделение по функциональности
-    path("api/v1/auth/", include("src.apps.accounts.auth_urls")),  # JWT + authentication
-    path("api/v1/users/", include("src.apps.accounts.user_urls")),  # User profiles
-    path("api/v1/", include("src.api.urls")),  # Business logic modules
+    path("verify-email/<uuid:token>/", AuthViewSet.as_view({"get": "verify_email_link"}), name="verify_email_link"),
+    path(
+        "api/v1/auth/",
+        include("src.apps.accounts.auth_urls"),name="jwt"),  # JWT + authentication
+    path("api/v1/users/", include("src.apps.accounts.user_urls"), name="users"),  # User management
+    path("api/v1/", include("src.api.urls"), name="Logic"),  # Business logic modules
     # Swagger documentation
     path("swagger<format>/", schema_view.without_ui(cache_timeout=0), name="schema-json"),
     path("swagger/", schema_view.with_ui("swagger", cache_timeout=0), name="schema-swagger-ui"),
     path("redoc/", schema_view.with_ui("redoc", cache_timeout=0), name="schema-redoc"),
-    # Django allauth для web-интерфейса
     path("accounts/", include("allauth.urls")),
 ]
 
