@@ -1,4 +1,4 @@
-name: 🚀 Django CI/CD Pipeline (Pytest Only)
+name: 🚀 Vervelure Django CI/CD Pipeline
 
 permissions:
   contents: read
@@ -26,7 +26,7 @@ env:
 
 jobs:
   # ==========================================
-  # 🎯 FOUNDATION SETUP
+  # 🎯 FOUNDATION SETUP WITH DEPENDENCY CACHING
   # ==========================================
   foundation-setup:
     name: "🎯 Foundation Setup"
@@ -44,6 +44,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
 
       - name: "💾 Cache Dependencies"
         id: cache
@@ -52,23 +53,32 @@ jobs:
           path: |
             ~/.cache/pypoetry
             ~/.cache/pip
-          key: deps-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+            ~/.local/share/pypoetry
+          key: deps-${{ runner.os }}-py${{ env.PYTHON_VERSION }}-${{ hashFiles('**/poetry.lock', '**/pyproject.toml') }}
+          restore-keys: |
+            deps-${{ runner.os }}-py${{ env.PYTHON_VERSION }}-
 
-      - name: "🎭 Install Poetry & Dependencies"
+      - name: "🎭 Install Poetry"
         run: |
           curl -sSL https://install.python-poetry.org | python3 -
           echo "$HOME/.local/bin" >> $GITHUB_PATH
+          poetry --version
+
+      - name: "📦 Configure Poetry & Install Dependencies"
+        run: |
           poetry config virtualenvs.create false
-          poetry install --no-root
+          poetry config installer.parallel true
+          poetry install --no-root --no-dev
+          pip install psycopg2-binary
 
   # ==========================================
-  # 🧪 TESTS STREAM - PYTEST ONLY
+  # 🧪 INDIVIDUAL TEST MATRIX EXECUTION
   # ==========================================
-  tests-stream:
-    name: "🧪 Tests (${{ matrix.test-file }})"
+  test-matrix:
+    name: "🧪 Tests: ${{ matrix.test-file }}"
     runs-on: ubuntu-latest
     needs: foundation-setup
-    timeout-minutes: 15
+    timeout-minutes: 12
 
     strategy:
       fail-fast: false
@@ -85,246 +95,354 @@ jobs:
       postgres:
         image: postgres:15-alpine
         env:
-          POSTGRES_USER: test_user
-          POSTGRES_PASSWORD: test_password
-          POSTGRES_DB: test_db
+          POSTGRES_USER: vervelure_test_user
+          POSTGRES_PASSWORD: vervelure_test_pass_2024
+          POSTGRES_DB: vervelure_test_db
         ports:
           - 5433:5432
         options: >-
-          --health-cmd "pg_isready -U test_user -d test_db"
+          --health-cmd "pg_isready -U vervelure_test_user -d vervelure_test_db"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
 
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 3
+
     env:
+      # Critical CI Environment Variables
       ENVIRONMENT: ci
-      IS_TESTING: "True"
+      IS_CI: "true"
+      IS_TESTING: "true"
+      GITHUB_ACTIONS: "true"
+
+      # Database Configuration (Individual settings override DATABASE_URL)
       DB_ENGINE: django.db.backends.postgresql
       DB_HOST: localhost
       DB_PORT: 5433
-      DB_NAME: test_db
-      DB_USER: test_user
-      DB_PASSWORD: test_password
-      SECRET_KEY: django-insecure-ci-test-key-${{ matrix.test-file }}
-      DEBUG: "True"
+      DB_NAME: vervelure_test_db
+      DB_USER: vervelure_test_user
+      DB_PASSWORD: vervelure_test_pass_2024
+
+      # Redis Configuration
+      REDIS_HOST: localhost
+      REDIS_PORT: 6380
+      CELERY_BROKER_URL: redis://localhost:6380/0
+      CELERY_RESULT_BACKEND: redis://localhost:6380/0
+
+      # Django Security & Debug
+      SECRET_KEY: django-insecure-ci-matrix-test-key-${{ github.run_id }}
+      DEBUG: "true"
       ALLOWED_HOSTS: localhost,127.0.0.1,testserver
+
+      # Performance Optimizations
       EMAIL_BACKEND: django.core.mail.backends.locmem.EmailBackend
+      CELERY_TASK_ALWAYS_EAGER: "true"
+      CELERY_TASK_EAGER_PROPAGATES: "true"
+      DISABLE_MIGRATIONS: "false"
+
+      # Test Configuration
+      PYTEST_TIMEOUT: 300
+      PYTHONPATH: ${{ github.workspace }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: "📥 Checkout Code"
+        uses: actions/checkout@v4
 
       - name: "🐍 Setup Python"
         uses: actions/setup-python@v5
         with:
           python-version: ${{ needs.foundation-setup.outputs.python-version }}
+          cache: 'pip'
 
-      - name: "💾 Restore Cache"
+      - name: "💾 Restore Dependencies Cache"
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/pypoetry
             ~/.cache/pip
-          key: deps-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
-
-      - name: "🎭 Install Poetry & System Dependencies"
-        run: |
-          curl -sSL https://install.python-poetry.org | python3 -
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-          poetry config virtualenvs.create false
-          poetry install --no-root
-          sudo apt-get update && sudo apt-get install -y postgresql-client
-
-      - name: "⏳ Wait for PostgreSQL"
-        run: |
-          echo "🐘 Waiting for PostgreSQL..."
-          timeout 60 bash -c 'until pg_isready -h localhost -p 5433 -U test_user; do sleep 2; done'
-          echo "✅ PostgreSQL is ready!"
-
-      - name: "🗄️ Setup Database (No Django Test Runner)"
-        run: |
-          export PYTHONPATH=$PWD
-          echo "🔧 Running basic Django setup..."
-          
-          # Only use safe Django commands
-          poetry run python -c "
-          import django
-          import os
-          os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
-          django.setup()
-          print('✅ Django configured successfully')
-          "
-          
-          # Run migrations safely
-          poetry run python manage.py migrate --noinput --verbosity=0
-          echo "✅ Database migrations completed"
-
-      - name: "📋 Verify Test File"
-        run: |
-          test_file="tests/${{ matrix.test-file }}"
-          echo "🔍 Checking for test file: $test_file"
-          
-          if [[ -f "$test_file" ]]; then
-            echo "✅ Test file found: $test_file"
-            echo "📊 File size: $(wc -l < "$test_file") lines"
-          else
-            echo "❌ Test file NOT found: $test_file"
-            echo "📁 Available files in tests/:"
-            ls -la tests/ || echo "tests/ directory not found"
-            exit 1
-          fi
-
-      - name: "🧪 Run Pytest for ${{ matrix.test-file }}"
-        run: |
-          export PYTHONPATH=$PWD
-          test_file="tests/${{ matrix.test-file }}"
-          
-          echo "🚀 Running pytest for: ${{ matrix.test-file }}"
-          echo "====================================='"
-          
-          # Run pytest with comprehensive options
-          poetry run pytest "$test_file" \
-            -v \
-            --tb=short \
-            --maxfail=3 \
-            --disable-warnings \
-            --no-header \
-            --no-summary \
-            -q \
-            || {
-              echo "❌ Tests failed for ${{ matrix.test-file }}"
-              echo "📋 Showing test structure:"
-              poetry run pytest "$test_file" --collect-only -q || true
-              exit 1
-            }
-          
-          echo "✅ All tests passed for ${{ matrix.test-file }}"
-
-      - name: "📊 Test Results Summary"
-        if: always()
-        run: |
-          echo "📈 Test Summary for ${{ matrix.test-file }}:"
-          echo "   File: tests/${{ matrix.test-file }}"
-          echo "   Status: ${{ job.status }}"
-          echo "   Timestamp: $(date)"
-
-  # ==========================================
-  # 🧪 ALL TESTS CONSOLIDATED
-  # ==========================================
-  all-tests:
-    name: "🧪 All Tests Consolidated"
-    runs-on: ubuntu-latest
-    needs: foundation-setup
-    timeout-minutes: 20
-
-    services:
-      postgres:
-        image: postgres:15-alpine
-        env:
-          POSTGRES_USER: test_user
-          POSTGRES_PASSWORD: test_password
-          POSTGRES_DB: test_db
-        ports:
-          - 5433:5432
-        options: >-
-          --health-cmd "pg_isready -U test_user -d test_db"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-    env:
-      ENVIRONMENT: ci
-      IS_TESTING: "True"
-      DB_ENGINE: django.db.backends.postgresql
-      DB_HOST: localhost
-      DB_PORT: 5433
-      DB_NAME: test_db
-      DB_USER: test_user
-      DB_PASSWORD: test_password
-      SECRET_KEY: django-insecure-ci-all-tests-key
-      DEBUG: "True"
-      ALLOWED_HOSTS: localhost,127.0.0.1,testserver
-      EMAIL_BACKEND: django.core.mail.backends.locmem.EmailBackend
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: "🐍 Setup Python"
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ needs.foundation-setup.outputs.python-version }}
+            ~/.local/share/pypoetry
+          key: deps-${{ runner.os }}-py${{ env.PYTHON_VERSION }}-${{ hashFiles('**/poetry.lock', '**/pyproject.toml') }}
 
       - name: "🎭 Install Poetry & Dependencies"
         run: |
           curl -sSL https://install.python-poetry.org | python3 -
           echo "$HOME/.local/bin" >> $GITHUB_PATH
           poetry config virtualenvs.create false
-          poetry install --no-root
-          sudo apt-get update && sudo apt-get install -y postgresql-client
+          poetry install --no-root --no-dev
+          pip install psycopg2-binary
 
-      - name: "⏳ Wait for PostgreSQL"
+      - name: "🔧 Verify Services Health"
         run: |
-          timeout 60 bash -c 'until pg_isready -h localhost -p 5433 -U test_user; do sleep 2; done'
+          echo "🏥 Checking PostgreSQL health..."
+          timeout 60s bash -c 'until pg_isready -h localhost -p 5433 -U vervelure_test_user; do sleep 2; done'
+          echo "✅ PostgreSQL is ready"
+          
+          echo "🏥 Checking Redis health..."
+          timeout 30s bash -c 'until redis-cli -h localhost -p 6380 ping | grep -q PONG; do sleep 1; done'
+          echo "✅ Redis is ready"
 
-      - name: "🗄️ Setup Database"
+      - name: "🗄️ Django Setup & Database Migration"
         run: |
           export PYTHONPATH=$PWD
-          poetry run python manage.py migrate --noinput --verbosity=0
+          echo "🔧 Initializing Django with CI settings..."
+          
+          # Clear any existing DATABASE_URL to force individual settings
+          unset DATABASE_URL
+          
+          # Initialize Django and verify configuration
+          python -c "
+          import os
+          import django
+          from django.conf import settings
+          
+          os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
+          django.setup()
+          
+          print('✅ Django initialized successfully')
+          print(f'🗄️  Database: {settings.DATABASES[\"default\"][\"NAME\"]}@{settings.DATABASES[\"default\"][\"HOST\"]}:{settings.DATABASES[\"default\"][\"PORT\"]}')
+          print(f'🔗 Redis: {settings.CACHES[\"default\"][\"LOCATION\"]}')
+          print(f'🌍 Environment: {settings.ENVIRONMENT}')
+          print(f'🧪 Testing Mode: {getattr(settings, \"IS_TESTING\", False)}')
+          "
+          
+          # Run migrations with proper error handling
+          echo "🚀 Running database migrations..."
+          python manage.py migrate --noinput --verbosity=1
+          echo "✅ Database migrations completed successfully"
 
-      - name: "📁 Verify Tests Directory"
+      - name: "📋 Verify Test File Structure"
         run: |
-          echo "🔍 Checking tests/ directory structure:"
-          if [[ -d "tests" ]]; then
-            echo "✅ tests/ directory found"
-            echo "📋 Test files available:"
-            find tests/ -name "test_*.py" -type f | sort
-            echo ""
-            echo "📊 Test files count: $(find tests/ -name 'test_*.py' | wc -l)"
+          test_file="tests/${{ matrix.test-file }}"
+          echo "🔍 Verifying test file: $test_file"
+          
+          if [[ -f "$test_file" ]]; then
+            echo "✅ Test file found: $test_file"
+            echo "📊 File stats:"
+            echo "   - Size: $(wc -l < "$test_file") lines"
+            echo "   - Last modified: $(stat -c %y "$test_file")"
+            
+            echo "🔬 Test collection preview:"
+            poetry run pytest "$test_file" --collect-only -q --maxfail=1 || {
+              echo "⚠️  Test collection failed, but continuing..."
+            }
           else
-            echo "❌ tests/ directory NOT found"
-            echo "📁 Current directory contents:"
-            ls -la
+            echo "❌ Test file NOT found: $test_file"
+            echo "📁 Available test files:"
+            find tests/ -name "*.py" -type f | sort || echo "No test files found"
             exit 1
           fi
 
-      - name: "🧪 Run ALL Tests from tests/ folder"
+      - name: "🧪 Execute Pytest for ${{ matrix.test-file }}"
         run: |
           export PYTHONPATH=$PWD
+          test_file="tests/${{ matrix.test-file }}"
           
-          echo "🚀 Running ALL tests from tests/ folder with pytest..."
-          echo "================================================================"
+          echo "🚀 Executing pytest for: ${{ matrix.test-file }}"
+          echo "=========================================="
           
-          # Run all tests in tests/ folder
-          poetry run pytest tests/ \
+          # Execute tests with comprehensive configuration
+          poetry run pytest "$test_file" \
             -v \
             --tb=short \
             --maxfail=5 \
-            --continue-on-collection-errors \
             --disable-warnings \
+            --no-header \
+            --strict-markers \
+            --strict-config \
+            -x \
+            --timeout=300 \
+            --durations=10 \
             || {
-              echo ""
-              echo "❌ Some tests failed. Here's the test collection info:"
-              poetry run pytest tests/ --collect-only -q || true
-              echo ""
-              echo "🔍 Let's try running tests individually to see which ones work:"
-              for test_file in tests/test_*.py; do
-                if [[ -f "$test_file" ]]; then
-                  echo "Testing $test_file..."
-                  poetry run pytest "$test_file" -v --tb=line || echo "❌ $test_file failed"
-                fi
-              done
+              echo "❌ Tests FAILED for ${{ matrix.test-file }}"
+              echo "📋 Test failure analysis:"
+              echo "   - File: $test_file"
+              echo "   - Exit code: $?"
+              echo "   - Timestamp: $(date)"
               exit 1
             }
           
-          echo "✅ ALL TESTS PASSED!"
+          echo "✅ All tests PASSED for ${{ matrix.test-file }}"
+
+      - name: "📊 Test Results Summary"
+        if: always()
+        run: |
+          echo "📈 Test Execution Summary:"
+          echo "   🎯 Target: tests/${{ matrix.test-file }}"
+          echo "   📊 Status: ${{ job.status }}"
+          echo "   ⏰ Completed: $(date)"
+          echo "   🔧 Environment: CI Matrix"
 
   # ==========================================
-  # ✨ CODE QUALITY CHECKS
+  # 🏁 CONSOLIDATED TEST SUITE EXECUTION
   # ==========================================
-  quality-checks:
-    name: "✨ Code Quality"
+  test-suite:
+    name: "🏁 Full Test Suite"
     runs-on: ubuntu-latest
     needs: foundation-setup
-    timeout-minutes: 10
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: vervelure_suite_user
+          POSTGRES_PASSWORD: vervelure_suite_pass_2024
+          POSTGRES_DB: vervelure_suite_db
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U vervelure_suite_user -d vervelure_suite_db"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 3
+
+    env:
+      ENVIRONMENT: ci
+      IS_CI: "true"
+      IS_TESTING: "true"
+      GITHUB_ACTIONS: "true"
+
+      DB_ENGINE: django.db.backends.postgresql
+      DB_HOST: localhost
+      DB_PORT: 5433
+      DB_NAME: vervelure_suite_db
+      DB_USER: vervelure_suite_user
+      DB_PASSWORD: vervelure_suite_pass_2024
+
+      REDIS_HOST: localhost
+      REDIS_PORT: 6380
+      CELERY_BROKER_URL: redis://localhost:6380/0
+      CELERY_RESULT_BACKEND: redis://localhost:6380/0
+
+      SECRET_KEY: django-insecure-ci-suite-test-key-${{ github.run_id }}
+      DEBUG: "true"
+      ALLOWED_HOSTS: localhost,127.0.0.1,testserver
+
+      EMAIL_BACKEND: django.core.mail.backends.locmem.EmailBackend
+      CELERY_TASK_ALWAYS_EAGER: "true"
+      CELERY_TASK_EAGER_PROPAGATES: "true"
+
+      PYTHONPATH: ${{ github.workspace }}
+
+    steps:
+      - name: "📥 Checkout Code"
+        uses: actions/checkout@v4
+
+      - name: "🐍 Setup Python"
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ needs.foundation-setup.outputs.python-version }}
+          cache: 'pip'
+
+      - name: "💾 Restore Dependencies Cache"
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pypoetry
+            ~/.cache/pip
+            ~/.local/share/pypoetry
+          key: deps-${{ runner.os }}-py${{ env.PYTHON_VERSION }}-${{ hashFiles('**/poetry.lock', '**/pyproject.toml') }}
+
+      - name: "🎭 Install Poetry & Dependencies"
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          poetry config virtualenvs.create false
+          poetry install --no-root --no-dev
+          pip install psycopg2-binary
+
+      - name: "🔧 Verify Services & Django Setup"
+        run: |
+          # Health checks
+          timeout 60s bash -c 'until pg_isready -h localhost -p 5433 -U vervelure_suite_user; do sleep 2; done'
+          timeout 30s bash -c 'until redis-cli -h localhost -p 6380 ping | grep -q PONG; do sleep 1; done'
+          
+          # Django initialization
+          export PYTHONPATH=$PWD
+          unset DATABASE_URL
+          
+          python -c "
+          import os
+          import django
+          from django.conf import settings
+          
+          os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
+          django.setup()
+          
+          print('✅ Full suite Django setup completed')
+          print(f'🗄️  Database: {settings.DATABASES[\"default\"][\"NAME\"]}')
+          print(f'🧪 Test environment verified')
+          "
+          
+          python manage.py migrate --noinput --verbosity=1
+          echo "✅ Full suite database ready"
+
+      - name: "🧪 Execute Complete Test Suite"
+        run: |
+          export PYTHONPATH=$PWD
+          
+          echo "🚀 Executing COMPLETE test suite..."
+          echo "====================================="
+          
+          # Run all tests with comprehensive reporting
+          poetry run pytest tests/ \
+            -v \
+            --tb=short \
+            --maxfail=10 \
+            --disable-warnings \
+            --strict-markers \
+            --strict-config \
+            --timeout=300 \
+            --durations=20 \
+            --cov=src \
+            --cov-report=term-missing \
+            --cov-fail-under=70 \
+            || {
+              echo "❌ FULL TEST SUITE FAILED"
+              echo "📋 Failure analysis:"
+              echo "   - Total tests executed"
+              echo "   - Coverage threshold: 70%"
+              echo "   - Exit code: $?"
+              exit 1
+            }
+          
+          echo "✅ COMPLETE TEST SUITE PASSED"
+
+      - name: "📊 Final Test Suite Report"
+        if: always()
+        run: |
+          echo "🏆 Final Test Suite Results:"
+          echo "   🎯 Scope: Complete test directory"
+          echo "   📊 Status: ${{ job.status }}"
+          echo "   ⏰ Completed: $(date)"
+          echo "   🔧 Environment: CI Full Suite"
+
+  # ==========================================
+  # 📋 DEPENDENCY SECURITY AUDIT
+  # ==========================================
+  security-audit:
+    name: "🛡️ Security Audit"
+    runs-on: ubuntu-latest
+    needs: foundation-setup
+    timeout-minutes: 5
 
     steps:
       - uses: actions/checkout@v4
@@ -334,69 +452,41 @@ jobs:
         with:
           python-version: ${{ needs.foundation-setup.outputs.python-version }}
 
-      - name: "💾 Restore Cache"
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/pypoetry
-            ~/.cache/pip
-          key: deps-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
-
-      - name: "🎭 Install Poetry"
+      - name: "🛡️ Security Vulnerability Scan"
         run: |
-          curl -sSL https://install.python-poetry.org | python3 -
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-          poetry config virtualenvs.create false
-          poetry install --no-root
-
-      - name: "✨ Run Code Quality Checks"
-        run: |
-          echo "🔍 Running Black formatter check..."
-          poetry run black --check --diff . || echo "❌ Format issues found"
+          pip install safety bandit
           
-          echo "📦 Running isort import check..."
-          poetry run isort --check --diff . || echo "❌ Import issues found"
+          echo "🔍 Scanning dependencies for known vulnerabilities..."
+          safety check --json || echo "⚠️ Safety check completed with warnings"
           
-          echo "🐍 Running flake8 linting..."
-          poetry run flake8 . --max-line-length=120 --extend-ignore=E203,W503 --statistics || echo "❌ Linting issues found"
+          echo "🔍 Static security analysis..."
+          bandit -r src/ -f json || echo "⚠️ Bandit scan completed with warnings"
 
   # ==========================================
-  # 🏁 PIPELINE COMPLETION
+  # 📊 STATUS AGGREGATION
   # ==========================================
-  pipeline-completion:
-    name: "🏁 Pipeline Results"
+  ci-status:
+    name: "📊 CI Status Summary"
     runs-on: ubuntu-latest
-    needs: [tests-stream, all-tests, quality-checks]
+    needs: [foundation-setup, test-matrix, test-suite, security-audit]
     if: always()
-    timeout-minutes: 5
 
     steps:
-      - name: "📊 Generate Pipeline Report"
+      - name: "📊 Generate CI Summary"
         run: |
-          echo "======================================="
-          echo "🚀 DJANGO CI/CD PIPELINE REPORT"
-          echo "======================================="
-          echo ""
-          echo "📈 RESULTS:"
-          echo "   🧪 Individual Tests: ${{ needs.tests-stream.result }}"
-          echo "   🧪 All Tests: ${{ needs.all-tests.result }}"
-          echo "   ✨ Code Quality: ${{ needs.quality-checks.result }}"
-          echo ""
+          echo "🏆 Vervelure CI/CD Pipeline Results:"
+          echo "=================================="
+          echo "🎯 Foundation Setup: ${{ needs.foundation-setup.result }}"
+          echo "🧪 Test Matrix: ${{ needs.test-matrix.result }}"
+          echo "🏁 Test Suite: ${{ needs.test-suite.result }}"
+          echo "🛡️ Security Audit: ${{ needs.security-audit.result }}"
+          echo "=================================="
           
           # Determine overall status
-          if [[ "${{ needs.tests-stream.result }}" == "success" ]] && \
-             [[ "${{ needs.all-tests.result }}" == "success" ]] && \
-             [[ "${{ needs.quality-checks.result }}" == "success" ]]; then
-            echo "🎉 OVERALL STATUS: SUCCESS"
-            echo "✅ All tests from tests/ folder passed!"
-            echo "✅ Code quality checks passed!"
+          if [[ "${{ needs.test-matrix.result }}" == "success" && "${{ needs.test-suite.result }}" == "success" ]]; then
+            echo "✅ OVERALL STATUS: SUCCESS"
+            exit 0
           else
-            echo "❌ OVERALL STATUS: ATTENTION REQUIRED"
-            echo "🔍 Please review failed jobs above"
+            echo "❌ OVERALL STATUS: FAILURE"
+            exit 1
           fi
-          
-          echo ""
-          echo "📁 Tests executed from: tests/ folder only"
-          echo "🔧 Test runner: pytest (Django test runner disabled)"
-          echo "⏱️  Pipeline completed at: $(date)"
-          echo "======================================="
