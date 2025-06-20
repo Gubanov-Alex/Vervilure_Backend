@@ -66,6 +66,9 @@ jobs:
 
       - name: "📦 Configure Poetry & Install Dependencies"
         run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          export PATH="$HOME/.local/bin:$PATH"
+          poetry --version
           poetry config virtualenvs.create false
           poetry config installer.parallel true
           poetry install --only=main --no-root
@@ -174,7 +177,8 @@ jobs:
       - name: "🎭 Install Poetry & Dependencies"
         run: |
           curl -sSL https://install.python-poetry.org | python3 -
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          export PATH="$HOME/.local/bin:$PATH"
+          poetry --version
           poetry config virtualenvs.create false
           poetry install --only=main --no-root
           pip install psycopg2-binary
