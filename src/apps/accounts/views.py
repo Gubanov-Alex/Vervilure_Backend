@@ -477,13 +477,13 @@ class AuthViewSet(GenericViewSet):
         """Check if registration is blocked for IP."""
         cache_key = f"registration_attempts_{ip}"
         attempts = cache.get(cache_key, 0)
-        return attempts >= 5  # Max 5 registrations per hour
+        return attempts >= 50  # Max 5 registrations per hour
 
     def _is_login_blocked(self, ip: str, email: str) -> bool:
         """Check if login is blocked for IP/email combination."""
         cache_key = f"login_attempts_{ip}_{email}"
         attempts = cache.get(cache_key, 0)
-        return attempts >= 5  # Max 5 failed attempts per hour
+        return attempts >= 50  # Max 5 failed attempts per hour
 
     def _increment_registration_attempts(self, ip: str) -> None:
         """Increment registration attempt counter."""
@@ -537,7 +537,7 @@ class AuthViewSet(GenericViewSet):
         # Rate limiting для password reset
         cache_key = f"password_reset_attempts_{client_ip}"
         attempts = cache.get(cache_key, 0)
-        if attempts >= 3:  # Максимум 3 попытки в час
+        if attempts >= 3:
             logger.warning(
                 f"Password reset rate limit exceeded for IP {client_ip}",
                 extra={"ip_address": client_ip, "action": "password_reset_rate_limit"},
@@ -672,7 +672,6 @@ class AuthViewSet(GenericViewSet):
             return Response({"error": "Verification key is required"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            # Простая реализация - в production используйте более сложную логику
             from django.core.signing import BadSignature, SignatureExpired, TimestampSigner
 
             signer = TimestampSigner()

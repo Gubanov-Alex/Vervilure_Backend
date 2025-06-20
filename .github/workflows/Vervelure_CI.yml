@@ -81,7 +81,7 @@ jobs:
 
       - name: "📦 Install Dependencies"
         run: |
-          poetry install --no-root --with dev,test
+          poetry install --no-root
 
       - name: "🚀 Check Deployment Conditions"
         id: deployment-check
@@ -134,6 +134,7 @@ jobs:
 
       - name: "🔐 Run Bandit Security Linter"
         run: |
+          poetry run pip install bandit || poetry run pip install bandit[toml]
           poetry run bandit -r src/ -f json -o bandit-report.json || true
           poetry run bandit -r src/ -ll || echo "⚠️ Security issues detected"
 
@@ -323,10 +324,22 @@ jobs:
         run: |
           export PYTHONPATH=$PWD
           case "${{ matrix.test-group }}" in
-            "auth") poetry run python manage.py test src.apps.accounts --verbosity=2 ;;
-            "api") poetry run python manage.py test tests.test_api --verbosity=2 ;;
-            "models") poetry run python manage.py test tests.test_models --verbosity=2 ;;
-            "views") poetry run python manage.py test tests.test_views --verbosity=2 ;;
+            "auth") 
+              if [ -d "src/apps/accounts/tests" ]; then
+                poetry run python manage.py test src.apps.accounts --verbosity=2
+              else
+                echo "ℹ️ No auth tests found, running general tests"
+                poetry run python manage.py test --verbosity=2 --parallel --keepdb
+              fi
+              ;;
+            "api"|"models"|"views") 
+              if [ -d "tests" ]; then
+                poetry run python manage.py test tests --verbosity=2 --parallel --keepdb
+              else
+                echo "ℹ️ Running available tests"
+                poetry run python manage.py test --verbosity=2 --parallel --keepdb
+              fi
+              ;;
           esac
 
   integration-tests:
