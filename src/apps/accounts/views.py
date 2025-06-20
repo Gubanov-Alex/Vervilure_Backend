@@ -1,4 +1,5 @@
 import logging
+import uuid
 from datetime import datetime
 
 from django.contrib.auth import get_user_model
@@ -19,6 +20,8 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import BlacklistedToken, UserAddress
 from .serializers import (
+    EmailVerificationResponseSerializer,
+    EmailVerificationSerializer,
     GoogleOAuthSerializer,
     PasswordChangeSerializer,
     UserAddressSerializer,
@@ -654,50 +657,68 @@ class AuthViewSet(GenericViewSet):
             return Response({"error": "Invalid or expired token"}, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
-        operation_description="Verify email address with token",
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={"key": openapi.Schema(type=openapi.TYPE_STRING, description="Email verification key")},
-            required=["key"],
-        ),
-        responses={200: "Email verified successfully", 400: "Invalid verification key"},
+        operation_description="Verify email address with UUID token",
+        request_body=EmailVerificationSerializer,
+        responses={
+            200: EmailVerificationResponseSerializer,
+            400: "Invalid or expired token",
+            409: "Email already verified",
+        },
     )
     @action(detail=False, methods=["post"])
     def verify_email(self, request) -> Response:
-        """Verify user email address with secure token."""
-        key = request.data.get("key")
+        """
+        Verify user email with secure UUID token.
+
+        Architecture: Uses UUID tokens instead of signed data for better security
+        and frontend compatibility. Implements proper state validation.
+        """
+        serializer = EmailVerificationSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        token = serializer.validated_data["token"]
         client_ip = self._get_client_ip(request)
 
-        if not key:
-            return Response({"error": "Verification key is required"}, status=status.HTTP_400_BAD_REQUEST)
-
         try:
-            from django.core.signing import BadSignature, SignatureExpired, TimestampSigner
+            with transaction.atomic():
+                user = User.objects.select_for_update().get(email_verification_token=token)
 
-            signer = TimestampSigner()
-            user_id = signer.unsign(key, max_age=86400)  # 24 hours
+                # Double-check in transaction for race conditions
+                if user.is_email_verified:
+                    return Response({"message": "Email already verified"}, status=status.HTTP_409_CONFLICT)
 
-            user = User.objects.get(pk=user_id)
+                if not user.is_verification_token_valid():
+                    logger.warning(
+                        f"Expired verification token used: {user.email}",
+                        extra={"user_id": user.id, "ip_address": client_ip},
+                    )
+                    return Response({"error": "Verification token has expired"}, status=status.HTTP_400_BAD_REQUEST)
 
-            if user.is_active:
-                return Response({"message": "Email already verified"}, status=status.HTTP_200_OK)
+                # Mark as verified and invalidate token
+                user.is_email_verified = True
+                user.is_active = True  # Activate user account
+                user.email_verification_token = uuid.uuid4()  # Invalidate token
+                user.save(update_fields=["is_email_verified", "is_active", "email_verification_token"])
 
-            user.is_active = True
-            user.save(update_fields=["is_active"])
+                verified_at = timezone.now()
 
-            logger.info(
-                f"Email verified: {user.email}",
-                extra={"user_id": user.id, "ip_address": client_ip, "action": "email_verification_success"},
-            )
+                logger.info(
+                    f"Email verified successfully: {user.email}",
+                    extra={"user_id": user.id, "ip_address": client_ip, "verified_at": verified_at.isoformat()},
+                )
 
-            return Response({"message": "Email verified successfully"}, status=status.HTTP_200_OK)
+                return Response(
+                    {"message": "Email verified successfully", "user_id": user.id, "verified_at": verified_at},
+                    status=status.HTTP_200_OK,
+                )
 
-        except (BadSignature, SignatureExpired, User.DoesNotExist):
+        except User.DoesNotExist:
             logger.warning(
-                "Invalid email verification attempt",
-                extra={"key": key[:10] + "...", "ip_address": client_ip, "action": "email_verification_invalid"},
+                f"Invalid verification token attempt from {client_ip}",
+                extra={"token": str(token)[:8] + "...", "ip_address": client_ip},
             )
-            return Response({"error": "Invalid or expired verification key"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Invalid verification token"}, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
         operation_description="Resend email verification",

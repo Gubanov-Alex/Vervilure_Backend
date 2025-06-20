@@ -1,5 +1,6 @@
 import logging
 import re
+import uuid
 from typing import Any, Dict
 
 from django.conf import settings
@@ -15,6 +16,33 @@ from .models import User, UserAddress
 from .utils import GoogleOAuthValidator
 
 logger = logging.getLogger(__name__)
+
+
+class EmailVerificationSerializer(serializers.Serializer):
+    """Serializer for email verification endpoint."""
+
+    token = serializers.UUIDField(help_text="Email verification token from email link")
+
+    def validate_token(self, value: uuid.UUID) -> uuid.UUID:
+        """Validate verification token exists and is not expired."""
+        try:
+            user = User.objects.get(email_verification_token=value)
+            if not user.is_verification_token_valid():
+                raise serializers.ValidationError("Verification token has expired")
+            if user.is_email_verified:
+                raise serializers.ValidationError("Email is already verified")
+        except User.DoesNotExist:
+            raise serializers.ValidationError("Invalid verification token")
+
+        return value
+
+
+class EmailVerificationResponseSerializer(serializers.Serializer):
+    """Response serializer for successful email verification."""
+
+    message = serializers.CharField()
+    user_id = serializers.IntegerField()
+    verified_at = serializers.DateTimeField()
 
 
 class PasswordValidationMixin:

@@ -15,13 +15,10 @@ logger = logging.getLogger(__name__)
 @shared_task(bind=True, max_retries=3)
 def send_verification_email(self, user_id: int) -> Optional[str]:
     """
-    Send email verification to user.
+    Send email verification with proper token generation.
 
-    Args:
-        user_id: User ID to send verification email to
-
-    Returns:
-        Success message or None if failed
+    Architecture: Regenerates token on each send for security,
+    implements proper error handling and retry logic.
     """
     try:
         user = User.objects.get(id=user_id)
@@ -30,20 +27,25 @@ def send_verification_email(self, user_id: int) -> Optional[str]:
             logger.info(f"User {user.email} already verified")
             return "User already verified"
 
-        # Generate verification URL
-        verification_url = f"{settings.FRONTEND_URL}/verify-email/" f"{user.email_verification_token}/"
+        # Generate fresh token for security
+        user.regenerate_verification_token()
 
-        # Render email template
+        verification_url = (
+            # f"{settings.FRONTEND_URL}/verify-email/" open for production
+            "http://localhost:8000/api/v1/auth/verify_email/"
+            f"{user.email_verification_token}/"
+        )
+
         context = {
             "user": user,
             "verification_url": verification_url,
             "site_name": "Vervilure",
+            "token_expires_hours": 24,
         }
 
         html_message = render_to_string("accounts/emails/verification_email.html", context)
         plain_message = strip_tags(html_message)
 
-        # Send email
         send_mail(
             subject="Verify your Vervilure account",
             message=plain_message,
@@ -53,16 +55,21 @@ def send_verification_email(self, user_id: int) -> Optional[str]:
             fail_silently=False,
         )
 
-        logger.info(f"Verification email sent to {user.email}")
+        logger.info(
+            f"Verification email sent: {user.email}",
+            extra={
+                "user_id": user.id,
+                "token_id": str(user.email_verification_token)[:8] + "...",
+                "sent_at": user.email_verification_sent_at.isoformat(),
+            },
+        )
         return f"Verification email sent to {user.email}"
 
     except User.DoesNotExist:
         logger.error(f"User with ID {user_id} not found")
         return None
-
     except Exception as exc:
         logger.error(f"Failed to send verification email: {exc}")
-        # Retry the task
         raise self.retry(exc=exc, countdown=60 * (self.request.retries + 1))
 
 

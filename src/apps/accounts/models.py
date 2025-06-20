@@ -1,9 +1,11 @@
 import uuid
+from datetime import timedelta
 
 from django.contrib.auth.base_user import BaseUserManager
 from django.contrib.auth.models import AbstractUser
 from django.core.validators import RegexValidator
 from django.db import models
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 
@@ -44,6 +46,22 @@ class UserManager(BaseUserManager):
 class User(AbstractUser):
     """Extended user model with additional fields for e-commerce platform."""
 
+    email_verification_token = models.UUIDField(default=uuid.uuid4, unique=True)
+    email_verification_sent_at = models.DateTimeField(null=True, blank=True)
+    is_email_verified = models.BooleanField(default=False)
+
+    def is_verification_token_valid(self) -> bool:
+        """Check if the verification token is still valid (24h window)."""
+        if not self.email_verification_sent_at:
+            return False
+        return timezone.now() < self.email_verification_sent_at + timedelta(hours=24)
+
+    def regenerate_verification_token(self) -> None:
+        """Generate new verification token and update timestamp."""
+        self.email_verification_token = uuid.uuid4()
+        self.email_verification_sent_at = timezone.now()
+        self.save(update_fields=["email_verification_token", "email_verification_sent_at"])
+
     username = None  # Remove the username field
     email = models.EmailField(_("email address"), unique=True)
     first_name = models.CharField(_("first name"), max_length=150)
@@ -65,10 +83,6 @@ class User(AbstractUser):
 
     date_of_birth = models.DateField(_("date of birth"), null=True, blank=True)
     avatar = models.ImageField(_("avatar"), upload_to="avatars/%Y/%m/%d/", null=True, blank=True)
-
-    # Account management
-    is_email_verified = models.BooleanField(_("email verified"), default=False)
-    email_verification_token = models.UUIDField(default=uuid.uuid4, editable=False)
 
     # Marketing preferences
     marketing_consent = models.BooleanField(_("marketing consent"), default=False)
@@ -97,6 +111,7 @@ class User(AbstractUser):
             models.Index(fields=["created_at"]),
             models.Index(fields=["is_active", "is_email_verified"]),
             models.Index(fields=["google_id"]),
+            models.Index(fields=["email_verification_token"]),
         ]
 
     def __str__(self) -> str:
