@@ -15,20 +15,6 @@ User = get_user_model()
 class TestGoogleOAuthIntegration:
     """Google OAuth integration tests for CI/CD - simplified."""
 
-    def test_google_oauth_management_command_exists(self):
-        """Test that Google OAuth management command exists."""
-        try:
-            from django.core.management import get_commands
-
-            commands = get_commands()
-            # Check if our command exists
-            oauth_commands = [cmd for cmd in commands if "oauth" in cmd.lower()]
-            # Just verify some OAuth-related commands exist or can be called
-            assert True  # Command structure exists
-        except ImportError:
-            # Command might not exist in MVP - that's okay
-            assert True
-
     def test_google_oauth_management_command_safe_execution(self):
         """Test Google OAuth management command safe execution."""
         out = StringIO()
