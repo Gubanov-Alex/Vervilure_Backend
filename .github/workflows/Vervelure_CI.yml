@@ -68,7 +68,7 @@ jobs:
         run: |
           poetry config virtualenvs.create false
           poetry config installer.parallel true
-          poetry install --only=main
+          poetry install --only=main --no-root
           pip install psycopg2-binary
 
   # ==========================================
@@ -176,7 +176,7 @@ jobs:
           curl -sSL https://install.python-poetry.org | python3 -
           echo "$HOME/.local/bin" >> $GITHUB_PATH
           poetry config virtualenvs.create false
-          poetry install --only=main
+          poetry install --only=main --no-root
           pip install psycopg2-binary
 
       - name: "🔧 Verify Services Health"
