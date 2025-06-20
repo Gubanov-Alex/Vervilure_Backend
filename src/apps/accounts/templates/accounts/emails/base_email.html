@@ -1,22 +1,92 @@
-{% extends "emails/base_email.html" %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ subject|default:"Vervilure" }}</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .email-container {
+            background-color: white;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #e1e5e9;
+        }
+        .logo {
+            font-size: 28px;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+        .content {
+            margin-bottom: 30px;
+        }
+        .button {
+            display: inline-block;
+            padding: 12px 24px;
+            background-color: #3498db;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+            margin: 20px 0;
+        }
+        .button:hover {
+            background-color: #2980b9;
+        }
+        .footer {
+            text-align: center;
+            padding-top: 20px;
+            border-top: 1px solid #e1e5e9;
+            color: #666;
+            font-size: 14px;
+        }
+        .verification-code {
+            background-color: #f8f9fa;
+            border: 2px dashed #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            text-align: center;
+            font-family: monospace;
+            font-size: 18px;
+            font-weight: bold;
+            margin: 20px 0;
+            letter-spacing: 2px;
+        }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="header">
+            <div class="logo">{{ site_name|default:"Vervilure" }}</div>
+            <p>Your Premium E-commerce Experience</p>
+        </div>
 
-{% block title %}Подтвердите ваш email{% endblock %}
+        <div class="content">
+            {% block content %}
+            <h2>Hello{% if user %}, {{ user.get_full_name|default:user.email }}{% endif %}!</h2>
+            <p>{{ message|default:"Thank you for using our service." }}</p>
+            {% endblock %}
+        </div>
 
-{% block content %}
-    <h2>Добро пожаловать в {{ site_name }}!</h2>
-    
-    <p>Здравствуйте, {{ user.first_name|default:user.username }}!</p>
-    
-    <p>Спасибо за регистрацию в {{ site_name }}. Чтобы завершить процесс регистрации, пожалуйста, подтвердите ваш email адрес.</p>
-    
-    <div class="verification-code">
-        <a href="{{ verification_url }}" style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">
-            Подтвердить Email
-        </a>
+        <div class="footer">
+            <p>&copy; 2025 {{ site_name|default:"Vervilure" }}. All rights reserved.</p>
+            <p>This email was sent from {{ site_name|default:"Vervilure" }} development environment.</p>
+        </div>
     </div>
-    
-    <p>Если кнопка не работает, скопируйте и вставьте эту ссылку в браузер:</p>
-    <p><a href="{{ verification_url }}">{{ verification_url }}</a></p>
-    
-    <p>Если вы не регистрировались на {{ site_name }}, просто проигнорируйте это письмо.</p>
-{% endblock %}
+</body>
+</html>
