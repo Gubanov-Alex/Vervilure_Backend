@@ -23,8 +23,6 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import BlacklistedToken, UserAddress
 from .serializers import (
-    EmailVerificationResponseSerializer,
-    EmailVerificationSerializer,
     GoogleOAuthSerializer,
     PasswordChangeSerializer,
     UserAddressSerializer,
@@ -94,7 +92,7 @@ class AuthViewSet(GenericViewSet):
         - Email verification workflow
         - Rate limiting per IP
         - Security logging
-        - Transaction safety
+        - Transaction safety with proper Celery task scheduling
         """
         client_ip = self._get_client_ip(request)
 
@@ -116,6 +114,9 @@ class AuthViewSet(GenericViewSet):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         try:
+            # Use transaction on_commit to ensure task runs after DB commit
+            from django.db import transaction
+
             with transaction.atomic():
                 user = serializer.save()
                 refresh = RefreshToken.for_user(user)
@@ -134,9 +135,12 @@ class AuthViewSet(GenericViewSet):
                     },
                 )
 
+                # Schedule email verification AFTER transaction commits
                 from .tasks import send_verification_email
 
-                send_verification_email.delay(user.id, user.email)
+                transaction.on_commit(
+                    lambda: send_verification_email.delay(user.id, user.email)
+                )
 
                 return Response(
                     {
@@ -161,7 +165,8 @@ class AuthViewSet(GenericViewSet):
                 exc_info=True,
             )
             return Response(
-                {"error": "Registration failed. Please try again."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {"error": "Registration failed. Please try again."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
     @swagger_auto_schema(
