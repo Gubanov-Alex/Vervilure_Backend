@@ -175,6 +175,7 @@ class JWTAuthTester:
 
             try:
                 from django.urls import reverse
+
                 # Fixed: Use correct namespace and name
                 logout_url = reverse("auth:logout")  # Changed from "auth:auth-logout"
 
@@ -243,18 +244,14 @@ class JWTAuthTester:
                             "blacklisted": True,
                             "url": logout_url,
                             "status_code": response.status_code,
-                            "refresh_attempt_status": refresh_response.status_code
+                            "refresh_attempt_status": refresh_response.status_code,
                         },
                     )
                 else:
                     return TestResult(
                         success=False,
                         message="Blacklisted token still working - blacklisting failed",
-                        data={
-                            "url": logout_url,
-                            "status_code": response.status_code,
-                            "refresh_still_works": True
-                        },
+                        data={"url": logout_url, "status_code": response.status_code, "refresh_still_works": True},
                         error="Token blacklisting mechanism not working",
                     )
             else:
@@ -281,13 +278,14 @@ class JWTAuthTester:
                 success=False,
                 message=f"Token blacklisting test failed: {str(e)}",
                 data={"exception_type": type(e).__name__},
-                error=str(e)
+                error=str(e),
             )
 
     def _url_exists(self, url_name: str) -> bool:
         """Check if a URL name exists in the URLconf with proper namespace handling."""
         try:
             from django.urls import reverse
+
             reverse(url_name)
             return True
         except Exception:
@@ -315,8 +313,8 @@ class JWTAuthTester:
                 defaults={
                     "password": self.test_password,
                     "is_active": True,
-                    "is_email_verified": True  # Ensure user can authenticate
-                }
+                    "is_email_verified": True,  # Ensure user can authenticate
+                },
             )
 
             if not created and not temp_user.check_password(self.test_password):

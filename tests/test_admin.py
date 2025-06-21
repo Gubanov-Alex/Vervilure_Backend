@@ -1,18 +1,18 @@
 """Tests for admin interface - safe imports and error handling."""
 
+# Set up Django before any other imports
+import django
 import pytest
+from django.conf import settings
 from django.contrib.admin.sites import AdminSite
 from django.contrib.auth import get_user_model
 from django.test import RequestFactory
-
-# Set up Django before any other imports
-import django
-from django.conf import settings
 
 if not settings.configured:
     django.setup()
 
 User = get_user_model()
+
 
 # Safe import with detailed error handling
 def get_admin_classes():
@@ -20,6 +20,7 @@ def get_admin_classes():
     try:
         from src.apps.accounts.admin import UserAddressAdmin, UserAdmin
         from src.apps.accounts.models import UserAddress
+
         return UserAdmin, UserAddressAdmin, UserAddress
     except ImportError as e:
         pytest.skip(f"Admin modules not available: {e}", allow_module_level=True)
@@ -43,17 +44,11 @@ class TestUserAdmin:
         self.factory = RequestFactory()
 
         self.superuser = User.objects.create_superuser(
-            email="admin@example.com",
-            password="adminpass123",
-            first_name="Admin",
-            last_name="User"
+            email="admin@example.com", password="adminpass123", first_name="Admin", last_name="User"
         )
 
         self.regular_user = User.objects.create_user(
-            email="user@example.com",
-            password="userpass123",
-            first_name="Regular",
-            last_name="User"
+            email="user@example.com", password="userpass123", first_name="Regular", last_name="User"
         )
 
     def test_admin_list_display_fields(self):
@@ -83,14 +78,14 @@ class TestUserAdmin:
     def test_admin_ordering_configuration(self):
         """Test admin default ordering."""
         # Should have some ordering defined
-        assert hasattr(self.admin, 'ordering'), "Admin should have ordering defined"
+        assert hasattr(self.admin, "ordering"), "Admin should have ordering defined"
         if self.admin.ordering:
             assert isinstance(self.admin.ordering, (list, tuple)), "Ordering should be list or tuple"
 
     def test_admin_fieldsets_basic_structure(self):
         """Test admin fieldsets basic structure."""
         # Fieldsets should exist or be None
-        if hasattr(self.admin, 'fieldsets') and self.admin.fieldsets:
+        if hasattr(self.admin, "fieldsets") and self.admin.fieldsets:
             assert isinstance(self.admin.fieldsets, (list, tuple)), "Fieldsets should be list or tuple"
             assert len(self.admin.fieldsets) > 0, "At least one fieldset should exist"
 
@@ -111,7 +106,7 @@ class TestUserAdmin:
         queryset = self.admin.get_queryset(request)
 
         # Should return a queryset
-        assert hasattr(queryset, 'model'), "Should return a queryset"
+        assert hasattr(queryset, "model"), "Should return a queryset"
         assert queryset.model == User, "Should return User queryset"
 
     def test_admin_form_class_availability(self):
@@ -135,10 +130,7 @@ class TestUserAddressAdmin:
         self.factory = RequestFactory()
 
         self.user = User.objects.create_user(
-            email="address@example.com",
-            password="testpass123",
-            first_name="Address",
-            last_name="User"
+            email="address@example.com", password="testpass123", first_name="Address", last_name="User"
         )
 
         # Create address with minimal required fields
@@ -155,16 +147,13 @@ class TestUserAddressAdmin:
     def test_address_admin_basic_configuration(self):
         """Test basic address admin configuration."""
         # Should have list_display
-        assert hasattr(self.admin, 'list_display'), "Admin should have list_display"
+        assert hasattr(self.admin, "list_display"), "Admin should have list_display"
         assert len(self.admin.list_display) > 0, "list_display should not be empty"
 
     def test_address_admin_permissions(self):
         """Test address admin basic permissions."""
         superuser = User.objects.create_superuser(
-            email="admin@example.com",
-            password="adminpass123",
-            first_name="Admin",
-            last_name="User"
+            email="admin@example.com", password="adminpass123", first_name="Admin", last_name="User"
         )
 
         request = self.factory.get("/admin/")
@@ -176,17 +165,14 @@ class TestUserAddressAdmin:
     def test_address_admin_queryset(self):
         """Test address admin queryset."""
         superuser = User.objects.create_superuser(
-            email="admin@example.com",
-            password="adminpass123",
-            first_name="Admin",
-            last_name="User"
+            email="admin@example.com", password="adminpass123", first_name="Admin", last_name="User"
         )
 
         request = self.factory.get("/admin/")
         request.user = superuser
 
         queryset = self.admin.get_queryset(request)
-        assert hasattr(queryset, 'model'), "Should return a queryset"
+        assert hasattr(queryset, "model"), "Should return a queryset"
         assert queryset.model == UserAddress, "Should return UserAddress queryset"
 
 
@@ -213,10 +199,7 @@ class TestAdminIntegration:
     def test_admin_basic_functionality(self):
         """Test basic admin functionality."""
         superuser = User.objects.create_superuser(
-            email="integration@example.com",
-            password="adminpass123",
-            first_name="Integration",
-            last_name="Admin"
+            email="integration@example.com", password="adminpass123", first_name="Integration", last_name="Admin"
         )
 
         # Should be able to create superuser for admin access

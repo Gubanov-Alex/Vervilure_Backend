@@ -13,6 +13,7 @@ DATABASES = {
     }
 }
 
+
 # Disable migrations for faster test execution
 class DisableMigrations:
     def __contains__(self, item):
@@ -20,6 +21,7 @@ class DisableMigrations:
 
     def __getitem__(self, item):
         return None
+
 
 MIGRATION_MODULES = DisableMigrations()
 

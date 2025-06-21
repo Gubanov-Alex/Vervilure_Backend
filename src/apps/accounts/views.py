@@ -600,8 +600,6 @@ class AuthViewSet(GenericViewSet):
             )
             return Response({"error": "Invalid or expired token"}, status=status.HTTP_400_BAD_REQUEST)
 
-
-
     @swagger_auto_schema(
         operation_description="Verify email via GET request from email link",
         tags=["Authentication"],

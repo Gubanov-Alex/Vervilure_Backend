@@ -18,15 +18,13 @@ logger = logging.getLogger(__name__)
 def send_verification_email(self, user_id: int, email: Optional[str] = None) -> Optional[str]:
     """Send email verification with backend verification URL."""
     try:
-        user = User.objects.filter(
-            Q(id=user_id) if user_id else Q(email=email)
-        ).first()
+        user = User.objects.filter(Q(id=user_id) if user_id else Q(email=email)).first()
 
         if not user:
             logger.error(f"User not found: ID={user_id}, email={email}")
             return None
 
-        if not hasattr(user, 'is_email_verified'):
+        if not hasattr(user, "is_email_verified"):
             logger.error(f"User {user.email} missing is_email_verified attribute")
             return None
 

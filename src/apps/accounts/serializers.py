@@ -88,6 +88,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer, PasswordValidation
     """
     Serializer for user registration with comprehensive validation.
     """
+
     id = serializers.IntegerField(read_only=True)
     email = serializers.EmailField(validators=[UniqueValidator(queryset=User.objects.all())])
     password = serializers.CharField(write_only=True, style={"input_type": "password"})

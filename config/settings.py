@@ -47,10 +47,7 @@ def load_environment_config() -> None:
         load_dotenv(env_file_path)
         print(f"[CONFIG] Loaded {env_description} config from {env_file_path.name}")
     else:
-        available_files = [
-            f for f in [".env.docker", ".env.local"]
-            if (BASE_DIR / f).exists()
-        ]
+        available_files = [f for f in [".env.docker", ".env.local"] if (BASE_DIR / f).exists()]
 
         error_msg = (
             f"Required environment file {env_file_path.name} not found. "
@@ -62,6 +59,7 @@ def load_environment_config() -> None:
             raise FileNotFoundError(error_msg)
 
         print(f"[WARNING] {error_msg} (Continuing in test mode)")
+
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -238,7 +236,6 @@ if IS_CI or IS_TESTING:
         }
     )
 
-
     # Disable migrations for faster CI if requested
     class DisableMigrations:
         def __contains__(self, item):
@@ -246,7 +243,6 @@ if IS_CI or IS_TESTING:
 
         def __getitem__(self, item):
             return None
-
 
     if os.environ.get("DISABLE_MIGRATIONS", "False").lower() == "true":
         MIGRATION_MODULES = DisableMigrations()
