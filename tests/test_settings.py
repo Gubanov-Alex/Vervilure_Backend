@@ -37,7 +37,9 @@ CACHES = {
     }
 }
 
-# Disable throttling for tests
+REST_FRAMEWORK = REST_FRAMEWORK.copy()
+
+
 REST_FRAMEWORK["DEFAULT_THROTTLE_CLASSES"] = []
 REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"] = {}
 
@@ -70,10 +72,10 @@ DEBUG = True
 SECRET_KEY = "test-secret-key-not-for-production"
 ALLOWED_HOSTS = ["testserver", "localhost", "127.0.0.1"]
 
-# Disable CSRF for API tests
+# Disable CSRF for API tests but keep authentication
 REST_FRAMEWORK["DEFAULT_AUTHENTICATION_CLASSES"] = [
     "rest_framework.authentication.SessionAuthentication",
     "rest_framework_simplejwt.authentication.JWTAuthentication",
 ]
 
-print("🧪 Test settings loaded - using SQLite in-memory database")
+print("🧪 Test settings loaded - using SQLite in-memory database with throttling disabled")

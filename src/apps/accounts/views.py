@@ -1,6 +1,7 @@
 import logging
 import uuid
 from datetime import datetime
+from datetime import timezone as dt_timezone
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -45,16 +46,38 @@ class AuthViewSet(GenericViewSet):
     """
 
     permission_classes = [permissions.AllowAny]
+    serializer_class = UserRegistrationSerializer
+
+    def get_serializer_class(self):
+        """Return appropriate serializer based on action."""
+        action_serializers = {
+            "register": UserRegistrationSerializer,
+            "login": UserLoginSerializer,
+            "google": GoogleOAuthSerializer,
+            "logout": None,  # No serializer needed for logout
+            "refresh": None,  # Uses DRF JWT serializer
+        }
+
+        return action_serializers.get(self.action, self.serializer_class)
 
     def get_throttles(self):
         """Apply action-specific throttling."""
-        throttle_classes = {
-            "login": [LoginRateThrottle],
+        throttle_classes_by_action = {
             "register": [RegistrationRateThrottle],
+            "login": [LoginRateThrottle],
+            "google": [LoginRateThrottle],  # Use same throttle as login
+            "logout": [],  # No throttling for logout
+            "refresh": [],  # No throttling for token refresh
         }
 
-        selected_throttles = throttle_classes.get(self.action, [])
+        selected_throttles = throttle_classes_by_action.get(self.action, [])
         return [throttle() for throttle in selected_throttles]
+
+    def get_permissions(self):
+        """Apply action-specific permissions."""
+        if self.action == "logout":
+            return [permissions.IsAuthenticated()]
+        return [permissions.AllowAny()]
 
     @swagger_auto_schema(
         operation_description="Register a new user with email verification",
@@ -424,7 +447,7 @@ class AuthViewSet(GenericViewSet):
             BlacklistedToken.objects.create(
                 token_jti=jti,
                 user=request.user,
-                expires_at=datetime.fromtimestamp(token["exp"], tz=timezone.utc),
+                expires_at=datetime.fromtimestamp(token["exp"], tz=dt_timezone.utc),
                 blacklisted_at=timezone.now(),
             )
 
