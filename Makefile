@@ -82,17 +82,21 @@ collectstatic:
 # Environment switching
 env-docker:
 	@echo "Switching to Docker environment..."
-	@if [ ! -f .env.docker ]; then echo "Error: .env.docker not found. Create it first."; exit 1; fi
-	@if [ -f .env ] && [ ! -f .env.local ]; then mv .env .env.local; fi
-	@cp .env.docker .env
-	@echo "Switched to Docker environment"
+	@if [ ! -f .env.docker ]; then \
+		echo "Error: .env.docker not found. Creating template..."; \
+		$(MAKE) create-docker-env; \
+	fi
+	@echo "Using .env.docker for Docker development"
+	@echo "✓ Docker environment configured"
 
 env-local:
 	@echo "Switching to local environment..."
-	@if [ ! -f .env.local ]; then echo "Error: .env.local not found"; exit 1; fi
-	@if [ -f .env ]; then cp .env .env.docker; fi
-	@cp .env.local .env
-	@echo "Switched to local environment"
+	@if [ ! -f .env.local ]; then \
+		echo "Error: .env.local not found. Creating template..."; \
+		$(MAKE) create-local-env; \
+	fi
+	@echo "Using .env.local for local development"
+	@echo "✓ Local environment configured"
 
 # Quick setup for Docker
 setup-docker:
@@ -220,10 +224,43 @@ debug:
 
 # Environment setup
 init:
-	@echo "Initializing project..."
-	@if [ -f .env_default ]; then cp .env_default .env; else echo "Warning: .env_default not found"; fi
-	@echo "Please edit .env file with your settings"
-	@echo "Then run: make setup-docker"
+	@echo "Initializing project with simplified environment configuration..."
+	@if [ ! -f .env.docker ] && [ ! -f .env.local ]; then \
+		echo "Creating both environment templates..."; \
+		$(MAKE) create-docker-env; \
+		$(MAKE) create-local-env; \
+		echo ""; \
+		echo "Environment files created:"; \
+		echo "  .env.docker - for Docker development"; \
+		echo "  .env.local  - for local development"; \
+		echo ""; \
+		echo "Edit the appropriate file for your setup, then run:"; \
+		echo "  make setup-docker  (for Docker development)"; \
+		echo "  make setup-local   (for local development)"; \
+	else \
+		echo "Environment files already exist:"; \
+		[ -f .env.docker ] && echo "  ✓ .env.docker"; \
+		[ -f .env.local ] && echo "  ✓ .env.local"; \
+	fi
+
+validate-env:
+	@echo "Validating environment configuration..."
+	@docker-compose run --rm web poetry run python manage.py check --deploy --settings=config.settings
+	@echo "✓ Environment configuration is valid"
+env-info:
+	@echo "Environment Information:"
+	@echo "======================="
+	@if [ -f .env.docker ]; then echo "Docker config: .env.docker exists"; else echo "Docker config: .env.docker missing"; fi
+	@if [ -f .env.local ]; then echo "Local config:  .env.local exists"; else echo "Local config:  .env.local missing"; fi
+	@echo ""
+	@echo "Current detection (when Django loads):"
+	@echo "  IS_LOCAL_DOCKER: DB_HOST contains 'db'"
+	@echo "  IS_CI: GITHUB_ACTIONS or ENVIRONMENT=ci"
+	@echo ""
+	@echo "File priority:"
+	@echo "  1. CI: GitHub Actions environment variables"
+	@echo "  2. Docker: .env.docker (when DB_HOST contains 'db')"
+	@echo "  3. Local: .env.local (when DB_HOST doesn't contain 'db')"
 
 # Quick fixes
 fix-docker:

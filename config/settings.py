@@ -20,14 +20,48 @@ if IS_CI and "DATABASE_URL" in os.environ:
     print(f"[CI] Removing DATABASE_URL: {os.environ['DATABASE_URL']}")
     del os.environ["DATABASE_URL"]
 
-# Load environment variables
-if IS_CI:
-    # CI environment gets config from GitHub Actions env
-    pass
-elif os.path.exists(".env.docker"):
-    load_dotenv(".env.docker " if IS_LOCAL_DOCKER else ".env")
-else:
-    load_dotenv(".env_default")
+
+# Simplified environment variables loading
+def load_environment_config() -> None:
+    """Load environment configuration with clear precedence.
+
+    Priority:
+    1. CI environment - use GitHub Actions env vars directly
+    2. Docker environment - use .env.docker
+    3. Local development - use .env.local
+    4. Fail fast if no config found
+    """
+    if IS_CI:
+        # CI environment gets config from GitHub Actions env
+        print("[CONFIG] Using CI environment variables from GitHub Actions")
+        return
+
+    if IS_LOCAL_DOCKER:
+        env_file_path = BASE_DIR / ".env.docker"
+        env_description = "Docker development"
+    else:
+        env_file_path = BASE_DIR / ".env.local"
+        env_description = "Local development"
+
+    if env_file_path and env_file_path.exists():
+        load_dotenv(env_file_path)
+        print(f"[CONFIG] Loaded {env_description} config from {env_file_path.name}")
+    else:
+        available_files = [
+            f for f in [".env.docker", ".env.local"]
+            if (BASE_DIR / f).exists()
+        ]
+
+        error_msg = (
+            f"Required environment file {env_file_path.name} not found. "
+            f"Available files: {available_files or 'none'}. "
+            "Create the appropriate .env file or run 'make init'."
+        )
+
+        if not IS_TESTING:  # Allow tests to run without env files
+            raise FileNotFoundError(error_msg)
+
+        print(f"[WARNING] {error_msg} (Continuing in test mode)")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
