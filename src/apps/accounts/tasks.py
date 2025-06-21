@@ -5,6 +5,8 @@ from celery import shared_task
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
+from django.db import close_old_connections
+from django.db.models import Q
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
 
@@ -13,10 +15,20 @@ logger = logging.getLogger(__name__)
 
 
 @shared_task(bind=True, max_retries=3)
-def send_verification_email(self, user_id: int) -> Optional[str]:
+def send_verification_email(self, user_id: int, email: Optional[str] = None) -> Optional[str]:
     """Send email verification with backend verification URL."""
     try:
-        user = User.objects.get(id=user_id)
+        user = User.objects.filter(
+            Q(id=user_id) if user_id else Q(email=email)
+        ).first()
+
+        if not user:
+            logger.error(f"User not found: ID={user_id}, email={email}")
+            return None
+
+        if not hasattr(user, 'is_email_verified'):
+            logger.error(f"User {user.email} missing is_email_verified attribute")
+            return None
 
         if user.is_email_verified:
             logger.info(f"User {user.email} already verified")
@@ -32,8 +44,10 @@ def send_verification_email(self, user_id: int) -> Optional[str]:
             "verification_url": verification_url,
             "site_name": "Vervilure",
             "token_expires_hours": 24,
+            "subject": "Verify your email address",
         }
 
+        logger.debug(f"Email context: {context}")
         html_message = render_to_string("accounts/emails/verification_email.html", context)
         plain_message = strip_tags(html_message)
 
@@ -86,6 +100,7 @@ def send_password_reset_email(self, user_id: int, reset_token: str) -> Optional[
             "user": user,
             "reset_url": reset_url,
             "site_name": "Vervilure",
+            "subject": "Reset your password",
         }
 
         html_message = render_to_string("accounts/emails/password_reset_email.html", context)

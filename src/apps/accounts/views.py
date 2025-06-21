@@ -136,7 +136,7 @@ class AuthViewSet(GenericViewSet):
 
                 from .tasks import send_verification_email
 
-                send_verification_email.delay(user.id)
+                send_verification_email.delay(user.id, user.email)
 
                 return Response(
                     {
@@ -600,67 +600,7 @@ class AuthViewSet(GenericViewSet):
             )
             return Response({"error": "Invalid or expired token"}, status=status.HTTP_400_BAD_REQUEST)
 
-    @swagger_auto_schema(
-        operation_description="Verify email address with UUID token (API endpoint)",
-        request_body=EmailVerificationSerializer,
-        tags=["Authentication"],
-        responses={
-            200: EmailVerificationResponseSerializer,
-            400: "Invalid or expired token",
-            409: "Email already verified",
-        },
-    )
-    @action(detail=False, methods=["post"])
-    def verify_email(self, request) -> Response:
-        """
-        Verify user email with secure UUID token via POST.
-        Used by API clients (mobile apps, SPAs with AJAX).
-        """
-        serializer = EmailVerificationSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        token = serializer.validated_data["token"]
-        client_ip = self._get_client_ip(request)
-
-        try:
-            with transaction.atomic():
-                user = User.objects.select_for_update().get(email_verification_token=token)
-
-                if user.is_email_verified:
-                    return Response({"message": "Email already verified"}, status=status.HTTP_409_CONFLICT)
-
-                if not user.is_verification_token_valid():
-                    logger.warning(
-                        f"Expired verification token used: {user.email}",
-                        extra={"user_id": user.id, "ip_address": client_ip},
-                    )
-                    return Response({"error": "Verification token has expired"}, status=status.HTTP_400_BAD_REQUEST)
-
-                # Mark as verified and invalidate token
-                user.is_email_verified = True
-                user.is_active = True
-                user.email_verification_token = uuid.uuid4()  # Invalidate token
-                user.save(update_fields=["is_email_verified", "is_active", "email_verification_token"])
-
-                verified_at = timezone.now()
-
-                logger.info(
-                    f"Email verified successfully: {user.email}",
-                    extra={"user_id": user.id, "ip_address": client_ip, "verified_at": verified_at.isoformat()},
-                )
-
-                return Response(
-                    {"message": "Email verified successfully", "user_id": user.id, "verified_at": verified_at},
-                    status=status.HTTP_200_OK,
-                )
-
-        except User.DoesNotExist:
-            logger.warning(
-                f"Invalid verification token attempt from {client_ip}",
-                extra={"token": str(token)[:8] + "...", "ip_address": client_ip},
-            )
-            return Response({"error": "Invalid verification token"}, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
         operation_description="Verify email via GET request from email link",
@@ -791,13 +731,13 @@ class AuthViewSet(GenericViewSet):
         """Check if registration is blocked for IP."""
         cache_key = f"registration_attempts_{ip}"
         attempts = cache.get(cache_key, 0)
-        return attempts >= 25  # Max 5 registrations per hour
+        return attempts >= 500  # Max 5 registrations per hour
 
     def _is_login_blocked(self, ip: str, email: str) -> bool:
         """Check if login is blocked for IP/email combination."""
         cache_key = f"login_attempts_{ip}_{email}"
         attempts = cache.get(cache_key, 0)
-        return attempts >= 25  # Max 5 failed attempts per hour
+        return attempts >= 500  # Max 5 failed attempts per hour
 
     def _increment_registration_attempts(self, ip: str) -> None:
         """Increment registration attempt counter."""

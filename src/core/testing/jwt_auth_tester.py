@@ -171,7 +171,7 @@ class JWTAuthTester:
 
             logout_urls = [
                 # f"{self.base_url}/users/auth/logout/",
-                 "/api/v1/users/auth/logout/",
+                "/api/v1/users/auth/logout/",
             ]
 
             logout_url = None

@@ -46,6 +46,7 @@ class UserAdmin(BaseUserAdmin):
     )
 
     list_display = [
+        "id",
         "email",
         "full_name",
         "is_active",
@@ -57,6 +58,7 @@ class UserAdmin(BaseUserAdmin):
     ]
 
     list_filter = [
+        "id",
         "is_active",
         "is_staff",
         "is_superuser",
@@ -66,7 +68,7 @@ class UserAdmin(BaseUserAdmin):
         "date_joined",
     ]
 
-    search_fields = ["email", "first_name", "last_name", "phone_number"]
+    search_fields = ["ID", "email", "first_name", "last_name", "phone_number"]
     ordering = ["-date_joined"]
     readonly_fields = [
         "date_joined",

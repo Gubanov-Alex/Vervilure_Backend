@@ -26,9 +26,7 @@ schema_view = get_schema_view(
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("verify-email/<uuid:token>/", AuthViewSet.as_view({"get": "verify_email_link"}), name="verify_email_link"),
-    path(
-        "api/v1/auth/",
-        include("src.apps.accounts.auth_urls"),name="jwt"),  # JWT + authentication
+    path("api/v1/auth/", include("src.apps.accounts.auth_urls"), name="jwt"),  # JWT + authentication
     path("api/v1/users/", include("src.apps.accounts.user_urls"), name="users"),  # User management
     path("api/v1/", include("src.api.urls"), name="Logic"),  # Business logic modules
     # Swagger documentation

@@ -73,6 +73,7 @@ services:
         condition: service_healthy
       mailpit:
         condition: service_healthy
+    command: python manage.py runserver 0.0.0.0:8000
     stdin_open: true
     tty: true
     restart: unless-stopped
@@ -121,3 +122,4 @@ volumes:
 networks:
   default:
     name: vervilure_network
+

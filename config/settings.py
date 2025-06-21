@@ -24,7 +24,7 @@ if IS_CI and "DATABASE_URL" in os.environ:
 if IS_CI:
     # CI environment gets config from GitHub Actions env
     pass
-elif os.path.exists(".env"):
+elif os.path.exists(".env.docker"):
     load_dotenv(".env.docker " if IS_LOCAL_DOCKER else ".env")
 else:
     load_dotenv(".env_default")

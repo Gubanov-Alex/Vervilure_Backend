@@ -5,6 +5,7 @@ from django.contrib.auth.base_user import BaseUserManager
 from django.contrib.auth.models import AbstractUser
 from django.core.validators import RegexValidator
 from django.db import models
+from django.db.models import Max
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -17,6 +18,9 @@ class UserManager(BaseUserManager):
         if not email:
             raise ValueError("The Email field must be set")
 
+        last_id = self.model.objects.aggregate(Max("id"))["id__max"]
+        next_id = 1 if last_id is None else last_id + 1
+        extra_fields["id"] = next_id
         email = self.normalize_email(email)
         user = self.model(email=email, **extra_fields)
         user.set_password(password)
@@ -46,6 +50,7 @@ class UserManager(BaseUserManager):
 class User(AbstractUser):
     """Extended user model with additional fields for e-commerce platform."""
 
+    id = models.BigAutoField(primary_key=True, verbose_name=_("ID"), db_index=True)
     email_verification_token = models.UUIDField(default=uuid.uuid4, unique=True)
     email_verification_sent_at = models.DateTimeField(null=True, blank=True)
     is_email_verified = models.BooleanField(default=False)
