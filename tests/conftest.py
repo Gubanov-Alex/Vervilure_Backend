@@ -12,28 +12,9 @@ sys.path.insert(0, str(project_root))
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "test_settings")
 os.environ["IS_TESTING"] = "True"
 
-# Import Django and configure it immediately
-import django
-from django.conf import settings
-
-if not settings.configured:
-    django.setup()
-
 import pytest
 
-
-def pytest_configure(config):
-    """Configure pytest for Django tests."""
-    from django.test.utils import setup_test_environment
-
-    setup_test_environment()
-
-
-def pytest_unconfigure(config):
-    """Clean up after tests."""
-    from django.test.utils import teardown_test_environment
-
-    teardown_test_environment()
+# DO NOT import Django here - let pytest-django handle it
 
 
 @pytest.fixture(scope="session")
@@ -47,7 +28,6 @@ def django_db_setup():
 def api_client():
     """Return DRF test client."""
     from rest_framework.test import APIClient
-
     return APIClient()
 
 
@@ -55,7 +35,6 @@ def api_client():
 def django_user_model():
     """Return User model."""
     from django.contrib.auth import get_user_model
-
     return get_user_model()
 
 
@@ -85,7 +64,6 @@ def regular_user(django_user_model):
 def admin_site():
     """Return Django admin site instance."""
     from django.contrib.admin.sites import AdminSite
-
     return AdminSite()
 
 
@@ -93,5 +71,4 @@ def admin_site():
 def request_factory():
     """Return Django request factory."""
     from django.test import RequestFactory
-
     return RequestFactory()
