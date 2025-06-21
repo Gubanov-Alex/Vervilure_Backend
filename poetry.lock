@@ -524,6 +524,19 @@ files = [
 toml = ["tomli"]
 
 [[package]]
+name = "crefi"
+version = "2.0.9"
+description = "A tool to generate different IO's and create files on any mount point"
+optional = false
+python-versions = "*"
+files = [
+    {file = "crefi-2.0.9.tar.gz", hash = "sha256:bb4b9921e90b106eeea43f4bad91f715df6d8468a963a652e2ead82bc332246a"},
+]
+
+[package.dependencies]
+pyxattr = "*"
+
+[[package]]
 name = "cryptography"
 version = "42.0.8"
 description = "cryptography is a package which provides cryptographic recipes and primitives to Python developers."
@@ -1069,6 +1082,16 @@ sqlalchemy = ["sqlalchemy (>=1.4.48,<2.1)"]
 sqs = ["boto3 (>=1.26.143)", "urllib3 (>=1.26.16)"]
 yaml = ["PyYAML (>=3.10)"]
 zookeeper = ["kazoo (>=2.8.0)"]
+
+[[package]]
+name = "logger"
+version = "1.4"
+description = "Python logging helper"
+optional = false
+python-versions = "*"
+files = [
+    {file = "logger-1.4.tar.gz", hash = "sha256:4ecac57133c6376fa215f0fe6b4dc4d60e4d1ad8be005cab4e8a702df682f8b3"},
+]
 
 [[package]]
 name = "matplotlib-inline"
@@ -1663,6 +1686,16 @@ files = [
 ]
 
 [[package]]
+name = "pyxattr"
+version = "0.8.1"
+description = "Filesystem extended attributes for python"
+optional = false
+python-versions = ">=3.7"
+files = [
+    {file = "pyxattr-0.8.1.tar.gz", hash = "sha256:48c578ecf8ea0bd4351b1752470e301a90a3761c7c21f00f953dcf6d6fa6ee5a"},
+]
+
+[[package]]
 name = "pyyaml"
 version = "6.0.2"
 description = "YAML parser and emitter for Python"
@@ -1968,4 +2001,4 @@ brotli = ["brotli"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.12"
-content-hash = "7fb8de386a91c94198b6c93cff2c281919e6ae0bb653849912faf4c83f0ded40"
+content-hash = "2120e9d753adf3f389abb623f18311fb034da135b40ca77cc6fe89ec5437b10f"

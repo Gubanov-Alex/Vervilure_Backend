@@ -1,8 +1,8 @@
 import json
 from typing import Dict
 
+import logger
 from django.test import Client
-from django.urls import reverse
 
 
 class TestResult:
@@ -165,52 +165,53 @@ class JWTAuthTester:
             return TestResult(success=False, message=f"Token refresh error: {str(e)}", data={}, error=str(e))
 
     def _test_token_blacklisting(self, refresh_token: str) -> TestResult:
-        """Test token blacklisting via logout endpoint with correct URL."""
+        """Test token blacklisting via logout endpoint with correct URL resolution."""
         try:
             access_token = self._get_access_token_for_user()
 
-            logout_urls = [
-                # f"{self.base_url}/users/auth/logout/",
-                "/api/v1/users/auth/logout/",
-            ]
-
+            # Try reverse lookup first with correct namespace
             logout_url = None
             last_response = None
 
-            for url in logout_urls:
-                try:
-                    response = self.client.post(
-                        url,
-                        data=json.dumps({"refresh": refresh_token}),
-                        content_type="application/json",
-                        HTTP_AUTHORIZATION=f"Bearer {access_token}",
-                    )
-                    last_response = response
+            try:
+                from django.urls import reverse
+                # Fixed: Use correct namespace and name
+                logout_url = reverse("auth:logout")  # Changed from "auth:auth-logout"
 
-                    if response.status_code != 404:
-                        logout_url = url
-                        break
+                response = self.client.post(
+                    logout_url,
+                    data=json.dumps({"refresh": refresh_token}),
+                    content_type="application/json",
+                    HTTP_AUTHORIZATION=f"Bearer {access_token}",
+                )
+                last_response = response
 
-                except Exception:
-                    continue
+            except Exception as reverse_error:
+                # Fallback to hardcoded URLs if reverse fails
+                logout_urls = [
+                    "/api/v1/auth/logout/",  # Correct path based on main urls.py
+                    "/api/v1/users/auth/logout/",  # Legacy fallback
+                ]
 
-            if not logout_url or (last_response and last_response.status_code == 404):
+                for url in logout_urls:
+                    try:
+                        response = self.client.post(
+                            url,
+                            data=json.dumps({"refresh": refresh_token}),
+                            content_type="application/json",
+                            HTTP_AUTHORIZATION=f"Bearer {access_token}",
+                        )
+                        last_response = response
 
-                try:
-                    from django.urls import reverse
+                        if response.status_code != 404:
+                            logout_url = url
+                            break
 
-                    # Попробуем точный namespace и basename из конфигурации
-                    logout_url = reverse("auth:auth-logout")
+                    except Exception:
+                        continue
 
-                    response = self.client.post(
-                        logout_url,
-                        data=json.dumps({"refresh": refresh_token}),
-                        content_type="application/json",
-                        HTTP_AUTHORIZATION=f"Bearer {access_token}",
-                    )
-                    last_response = response
-
-                except Exception as reverse_error:
+                # If all attempts failed
+                if not logout_url or (last_response and last_response.status_code == 404):
                     return TestResult(
                         success=False,
                         message="Logout endpoint not found - URL configuration issue",
@@ -218,7 +219,8 @@ class JWTAuthTester:
                             "tested_urls": logout_urls,
                             "last_status_code": last_response.status_code if last_response else "No response",
                             "reverse_error": str(reverse_error),
-                            "suggestion": "URL configuration: users/ + auth/ + logout/ = /api/v1/users/auth/logout/",
+                            "correct_namespace": "auth:logout (not auth:auth-logout)",
+                            "suggestion": "Check auth_urls.py: namespace='auth' + name='logout'",
                         },
                         error="HTTP 404 - Endpoint not found",
                     )
@@ -226,6 +228,7 @@ class JWTAuthTester:
             response = last_response
 
             if response.status_code == 200:
+                # Test that token is actually blacklisted
                 refresh_response = self.client.post(
                     f"{self.base_url}/auth/jwt/refresh/",
                     data=json.dumps({"refresh": refresh_token}),
@@ -236,21 +239,30 @@ class JWTAuthTester:
                     return TestResult(
                         success=True,
                         message="Token blacklisting working correctly",
-                        data={"blacklisted": True, "url": logout_url, "status_code": response.status_code},
+                        data={
+                            "blacklisted": True,
+                            "url": logout_url,
+                            "status_code": response.status_code,
+                            "refresh_attempt_status": refresh_response.status_code
+                        },
                     )
                 else:
                     return TestResult(
                         success=False,
-                        message="Blacklisted token still working",
-                        data={"url": logout_url, "status_code": response.status_code},
-                        error="Blacklisting failed",
+                        message="Blacklisted token still working - blacklisting failed",
+                        data={
+                            "url": logout_url,
+                            "status_code": response.status_code,
+                            "refresh_still_works": True
+                        },
+                        error="Token blacklisting mechanism not working",
                     )
             else:
                 response_data = {}
                 try:
                     response_data = json.loads(response.content)
                 except Exception:
-                    pass
+                    response_data = {"raw_content": response.content.decode() if response.content else None}
 
                 return TestResult(
                     success=False,
@@ -265,11 +277,17 @@ class JWTAuthTester:
                 )
 
         except Exception as e:
-            return TestResult(success=False, message=f"Token blacklisting test failed: {str(e)}", data={}, error=str(e))
+            return TestResult(
+                success=False,
+                message=f"Token blacklisting test failed: {str(e)}",
+                data={"exception_type": type(e).__name__},
+                error=str(e)
+            )
 
     def _url_exists(self, url_name: str) -> bool:
-        """Check if a URL name exists in the URLconf."""
+        """Check if a URL name exists in the URLconf with proper namespace handling."""
         try:
+            from django.urls import reverse
             reverse(url_name)
             return True
         except Exception:
@@ -287,21 +305,29 @@ class JWTAuthTester:
         """Get valid access token for authenticated requests."""
         try:
             from django.contrib.auth import get_user_model
+            from rest_framework_simplejwt.tokens import RefreshToken
 
             User = get_user_model()
 
-            temp_user = User.objects.filter(email="temp.logout@test.com").first()
-            if not temp_user:
-                temp_user = User.objects.create_user(
-                    email="temp.logout@test.com", password=self.test_password, is_active=True
-                )
+            # Create or get temporary user for testing
+            temp_user, created = User.objects.get_or_create(
+                email="temp.logout@test.com",
+                defaults={
+                    "password": self.test_password,
+                    "is_active": True,
+                    "is_email_verified": True  # Ensure user can authenticate
+                }
+            )
 
-            from rest_framework_simplejwt.tokens import RefreshToken
+            if not created and not temp_user.check_password(self.test_password):
+                temp_user.set_password(self.test_password)
+                temp_user.save()
 
             refresh = RefreshToken.for_user(temp_user)
             return str(refresh.access_token)
 
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Failed to get access token for testing: {e}")
             return "dummy_token_for_testing"
 
     def test_complete_jwt_flow(self, email: str) -> Dict[str, TestResult]:

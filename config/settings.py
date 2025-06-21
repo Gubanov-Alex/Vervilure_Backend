@@ -223,15 +223,21 @@ DATABASES = get_database_config()
 
 # CI/Testing specific database optimizations
 if IS_CI or IS_TESTING:
+    # PostgreSQL-specific test database configuration
     DATABASES["default"].update(
         {
             "TEST": {
                 "NAME": "test_vervilure_ci",
-                "CHARSET": "utf8",
-                "COLLATION": "utf8_general_ci",
+                "OPTIONS": {
+                    "client_encoding": "UTF8",
+                },
+                # Performance optimizations for tests
+                "CREATE_DB_VERBOSITY": 0,
+                "KEEPDB": os.environ.get("KEEPDB", "false").lower() == "true",
             }
         }
     )
+
 
     # Disable migrations for faster CI if requested
     class DisableMigrations:
@@ -240,6 +246,7 @@ if IS_CI or IS_TESTING:
 
         def __getitem__(self, item):
             return None
+
 
     if os.environ.get("DISABLE_MIGRATIONS", "False").lower() == "true":
         MIGRATION_MODULES = DisableMigrations()

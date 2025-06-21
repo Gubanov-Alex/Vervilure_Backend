@@ -27,6 +27,8 @@ google-auth = "^2.28.0"
 google-auth-oauthlib = "^1.2.0"
 google-auth-httplib2 = "^0.2.0"
 cryptography = "^42.0.0"
+logger = "^1.4"
+crefi = "^2.0.9"
 
 
 
