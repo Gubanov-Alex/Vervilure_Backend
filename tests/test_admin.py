@@ -115,16 +115,14 @@ class TestUserAdmin:
 
         # Check if select_related or prefetch_related are used for performance
         # This is important for admin performance with foreign keys
-        assert hasattr(queryset, "_prefetch_related_lookups") or hasattr(queryset, "query"), "Queryset should support optimization"
+        assert hasattr(queryset, "_prefetch_related_lookups") or hasattr(
+            queryset, "query"
+        ), "Queryset should support optimization"
 
     def test_admin_readonly_fields_for_staff(self):
         """Test readonly fields configuration for staff users."""
         staff_user = User.objects.create_user(
-            email="staff@example.com",
-            password="staffpass123",
-            is_staff=True,
-            first_name="Staff",
-            last_name="User"
+            email="staff@example.com", password="staffpass123", is_staff=True, first_name="Staff", last_name="User"
         )
 
         request = self.factory.get("/admin/")
@@ -148,10 +146,7 @@ class TestUserAddressAdmin:
         self.factory = request_factory
 
         self.user = django_user_model.objects.create_user(
-            email="address@example.com",
-            password="testpass123",
-            first_name="Address",
-            last_name="User"
+            email="address@example.com", password="testpass123", first_name="Address", last_name="User"
         )
 
         # Create address with minimal required fields
@@ -174,10 +169,7 @@ class TestUserAddressAdmin:
     def test_address_admin_permissions(self, django_user_model):
         """Test address admin basic permissions."""
         superuser = django_user_model.objects.create_superuser(
-            email="admin@example.com",
-            password="adminpass123",
-            first_name="Admin",
-            last_name="User"
+            email="admin@example.com", password="adminpass123", first_name="Admin", last_name="User"
         )
 
         request = self.factory.get("/admin/")
@@ -189,10 +181,7 @@ class TestUserAddressAdmin:
     def test_address_admin_queryset(self, django_user_model):
         """Test address admin queryset."""
         superuser = django_user_model.objects.create_superuser(
-            email="admin@example.com",
-            password="adminpass123",
-            first_name="Admin",
-            last_name="User"
+            email="admin@example.com", password="adminpass123", first_name="Admin", last_name="User"
         )
 
         request = self.factory.get("/admin/")
@@ -205,10 +194,7 @@ class TestUserAddressAdmin:
     def test_address_admin_list_select_related(self, django_user_model):
         """Test address admin uses select_related for performance."""
         superuser = django_user_model.objects.create_superuser(
-            email="admin@example.com",
-            password="adminpass123",
-            first_name="Admin",
-            last_name="User"
+            email="admin@example.com", password="adminpass123", first_name="Admin", last_name="User"
         )
 
         request = self.factory.get("/admin/")
@@ -245,10 +231,7 @@ class TestAdminIntegration:
     def test_admin_basic_functionality(self, django_user_model):
         """Test basic admin functionality."""
         superuser = django_user_model.objects.create_superuser(
-            email="integration@example.com",
-            password="adminpass123",
-            first_name="Integration",
-            last_name="Admin"
+            email="integration@example.com", password="adminpass123", first_name="Integration", last_name="Admin"
         )
 
         # Should be able to create superuser for admin access
@@ -258,7 +241,7 @@ class TestAdminIntegration:
     def test_admin_urls_accessible(self):
         """Test admin URLs are properly configured."""
         from django.contrib import admin
-        from django.urls import reverse, NoReverseMatch
+        from django.urls import NoReverseMatch, reverse
 
         try:
             admin_url = reverse("admin:index")
@@ -272,10 +255,7 @@ class TestAdminIntegration:
         from django.urls import reverse
 
         user = django_user_model.objects.create_user(
-            email="changeview@example.com",
-            password="testpass123",
-            first_name="Change",
-            last_name="View"
+            email="changeview@example.com", password="testpass123", first_name="Change", last_name="View"
         )
 
         try:

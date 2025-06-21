@@ -138,9 +138,7 @@ class AuthViewSet(GenericViewSet):
                 # Schedule email verification AFTER transaction commits
                 from .tasks import send_verification_email
 
-                transaction.on_commit(
-                    lambda: send_verification_email.delay(user.id, user.email)
-                )
+                transaction.on_commit(lambda: send_verification_email.delay(user.id, user.email))
 
                 return Response(
                     {
@@ -165,8 +163,7 @@ class AuthViewSet(GenericViewSet):
                 exc_info=True,
             )
             return Response(
-                {"error": "Registration failed. Please try again."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {"error": "Registration failed. Please try again."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
     @swagger_auto_schema(

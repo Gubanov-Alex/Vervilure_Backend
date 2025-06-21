@@ -1,4 +1,5 @@
 import os
+
 from celery import Celery
 from kombu import Queue
 
@@ -11,27 +12,23 @@ app.config_from_object("django.conf:settings", namespace="CELERY")
 app.conf.update(
     # Acknowledge tasks after they have been executed
     task_acks_late=True,
-
     # Reject tasks on worker lost to requeue them
     task_reject_on_worker_lost=True,
-
     # Task time limits
     task_soft_time_limit=300,  # 5 minutes soft limit
     task_time_limit=600,  # 10 minutes hard limit
-
     # Worker configuration
     worker_prefetch_multiplier=1,  # Disable prefetching for better task distribution
     worker_max_tasks_per_child=1000,  # Restart worker after 1000 tasks to prevent memory leaks
-
     # Database connection pooling
     worker_pool_restarts=True,
 )
 
 # Define queues for better task organization
 app.conf.task_routes = {
-    'src.apps.accounts.tasks.send_verification_email': {'queue': 'emails'},
-    'src.apps.accounts.tasks.send_password_reset_email': {'queue': 'emails'},
-    'src.apps.accounts.tasks.cleanup_expired_tokens': {'queue': 'maintenance'},
+    "src.apps.accounts.tasks.send_verification_email": {"queue": "emails"},
+    "src.apps.accounts.tasks.send_password_reset_email": {"queue": "emails"},
+    "src.apps.accounts.tasks.cleanup_expired_tokens": {"queue": "maintenance"},
 }
 
 app.autodiscover_tasks()
