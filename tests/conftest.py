@@ -153,6 +153,14 @@ def admin_user(user_factory):
 
 
 @pytest.fixture
+def superuser(user_factory):
+    """Create a superuser for admin tests."""
+    return user_factory(
+        email="superuser@example.com", first_name="Super", last_name="User", is_staff=True, is_superuser=True
+    )
+
+
+@pytest.fixture
 def unverified_user(user_factory):
     """Create an unverified test user."""
     return user_factory(
@@ -162,6 +170,14 @@ def unverified_user(user_factory):
         is_email_verified=False,
         is_active=False,
     )
+
+
+@pytest.fixture
+def request_factory():
+    """Django request factory for admin tests."""
+    from django.test import RequestFactory
+
+    return RequestFactory()
 
 
 # Authentication fixtures
@@ -344,6 +360,15 @@ def local_environment():
 # Pytest configuration
 def pytest_configure(config):
     """Configure pytest with custom settings."""
+    # Register custom markers
+    config.addinivalue_line("markers", "admin: mark test as admin interface test")
+    config.addinivalue_line("markers", "integration: mark test as integration test")
+    config.addinivalue_line("markers", "performance: mark test as performance test")
+    config.addinivalue_line("markers", "security: mark test as security test")
+    config.addinivalue_line("markers", "auth: mark test as authentication test")
+    config.addinivalue_line("markers", "api: mark test as API test")
+    config.addinivalue_line("markers", "slow: mark test as slow running test")
+
     # Disable migrations for faster tests
     settings.MIGRATION_MODULES = {app: None for app in settings.INSTALLED_APPS if app.startswith("src.apps.")}
 
