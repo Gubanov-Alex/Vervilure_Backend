@@ -1,6 +1,5 @@
 import logging
 from typing import Any, Dict, Optional, Tuple
-
 import requests
 
 logger = logging.getLogger(__name__)
@@ -8,10 +7,7 @@ logger = logging.getLogger(__name__)
 
 class GoogleOAuthValidator:
     """
-    Validator for Google OAuth access tokens.
-
-    Handles token validation and user info extraction from Google's API
-    with comprehensive error handling.
+    Validator for Google OAuth access tokens with comprehensive error handling.
     """
 
     def __init__(self, client_id: str):
@@ -20,15 +16,7 @@ class GoogleOAuthValidator:
         self.google_tokeninfo_url = "https://www.googleapis.com/oauth2/v1/tokeninfo"
 
     def validate_token(self, access_token: str) -> Tuple[bool, Optional[Dict[str, Any]], Optional[str]]:
-        """
-        Validate Google access token and return user information.
-
-        Args:
-            access_token: Google OAuth access token
-
-        Returns:
-            Tuple of (is_valid, user_info, error_message)
-        """
+        """Validate Google access token and return user information."""
         if not access_token or not access_token.strip():
             return False, None, "Access token is required"
 
@@ -51,22 +39,18 @@ class GoogleOAuthValidator:
             processed_user_info = self._process_user_info(user_info)
             return True, processed_user_info, None
 
-        except requests.RequestException as e:
-            logger.error(f"Google API request failed: {str(e)}")
-            return False, None, "Failed to validate token with Google"
         except Exception as e:
             logger.error(f"Token validation error: {str(e)}")
             return False, None, "Token validation failed"
 
     def _get_token_info(self, access_token: str) -> Optional[Dict[str, Any]]:
-        """
-        Get token information from Google.
-
-        Returns:
-            Token info dict or None if failed
-        """
+        """Get token information from Google with comprehensive error handling."""
         try:
-            response = requests.get(self.google_tokeninfo_url, params={"access_token": access_token}, timeout=10)
+            response = requests.get(
+                self.google_tokeninfo_url,
+                params={"access_token": access_token},
+                timeout=10
+            )
 
             if response.status_code == 200:
                 return response.json()
@@ -74,29 +58,19 @@ class GoogleOAuthValidator:
                 logger.warning(f"Token info request failed: {response.status_code}")
                 return None
 
-        except requests.Timeout:
-            logger.error("Token info request timed out")
-            return None
-        except requests.ConnectionError:
-            logger.error("Token info request connection failed")
-            return None
-        except ValueError as e:
-            logger.error(f"Token info JSON decode error: {str(e)}")
-            return None
         except Exception as e:
             logger.error(f"Token info request failed: {str(e)}")
             return None
 
     def _get_user_info(self, access_token: str) -> Optional[Dict[str, Any]]:
-        """
-        Get user information from Google.
-
-        Returns:
-            User info dict or None if failed
-        """
+        """Get user information from Google with comprehensive error handling."""
         try:
             headers = {"Authorization": f"Bearer {access_token}"}
-            response = requests.get(self.google_userinfo_url, headers=headers, timeout=10)
+            response = requests.get(
+                self.google_userinfo_url,
+                headers=headers,
+                timeout=10
+            )
 
             if response.status_code == 200:
                 return response.json()
@@ -104,29 +78,12 @@ class GoogleOAuthValidator:
                 logger.warning(f"User info request failed: {response.status_code}")
                 return None
 
-        except requests.Timeout:
-            logger.error("User info request timed out")
-            return None
-        except requests.ConnectionError:
-            logger.error("User info request connection failed")
-            return None
-        except ValueError as e:
-            logger.error(f"User info JSON decode error: {str(e)}")
-            return None
         except Exception as e:
             logger.error(f"User info request failed: {str(e)}")
             return None
 
     def _process_user_info(self, raw_user_info: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Process and normalize user information from Google.
-
-        Args:
-            raw_user_info: Raw user data from Google API
-
-        Returns:
-            Processed user info dict
-        """
+        """Process and normalize user information from Google."""
         return {
             "google_id": raw_user_info.get("id", ""),
             "email": raw_user_info.get("email", ""),

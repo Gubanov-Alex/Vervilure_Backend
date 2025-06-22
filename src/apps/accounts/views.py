@@ -1,7 +1,6 @@
 import logging
 import uuid
-from datetime import datetime
-from datetime import timezone as dt_timezone
+from datetime import datetime, timezone as dt_timezone
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -35,7 +34,8 @@ from .throttles import LoginRateThrottle, PasswordChangeRateThrottle, Registrati
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
-
+rest_framework_settings = getattr(settings, 'REST_FRAMEWORK', {})
+throttle_rates = rest_framework_settings.get('DEFAULT_THROTTLE_RATES', {})
 
 class AuthViewSet(GenericViewSet):
     """
@@ -810,6 +810,20 @@ class UserProfileViewSet(RetrieveModelMixin, UpdateModelMixin, GenericViewSet):
 
     def get_throttles(self):
         """Apply throttling for sensitive operations."""
+        throttle_classes_by_action = {
+            "register": [RegistrationRateThrottle],
+            "login": [LoginRateThrottle],
+            "google": [LoginRateThrottle],
+            "logout": [],
+            "refresh": [],
+        }
+
+        selected_throttles = throttle_classes_by_action.get(self.action, [])
+        if not throttle_rates:
+            return []
+
+        return [throttle() for throttle in selected_throttles]
+
         if self.action == "change_password":
             return [PasswordChangeRateThrottle()]
         return super().get_throttles()
