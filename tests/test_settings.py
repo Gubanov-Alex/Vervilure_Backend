@@ -4,7 +4,7 @@ Optimized for maximum test speed and isolation.
 """
 
 import os
-from datetime import timedelta  # ИСПРАВЛЕНО: правильный импорт timedelta
+from datetime import timedelta
 from pathlib import Path
 
 # Build paths
@@ -26,12 +26,16 @@ DJANGO_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django.contrib.sites",  # Добавлено для allauth
 ]
 
 THIRD_PARTY_APPS = [
     "rest_framework",
     "rest_framework_simplejwt",
+    "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
+    "drf_yasg",
+    "django_redis",
     "allauth",
     "allauth.account",
     "allauth.socialaccount",
@@ -40,7 +44,7 @@ THIRD_PARTY_APPS = [
 
 LOCAL_APPS = [
     "src.apps.accounts",
-    "src.apps.common",
+    "src.core",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -57,7 +61,8 @@ MIDDLEWARE = [
     "allauth.account.middleware.AccountMiddleware",
 ]
 
-ROOT_URLCONF = "config.urls"
+
+ROOT_URLCONF = "tests.test_urls"
 
 TEMPLATES = [
     {
@@ -89,6 +94,27 @@ DATABASES = {
     }
 }
 
+# CI Environment detection and database override
+IS_CI = os.getenv("CI", "false").lower() == "true"
+if IS_CI:
+    # Override database for CI environment
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": os.getenv("DB_NAME", "test_vervilure_ci"),
+            "USER": os.getenv("DB_USER", "postgres"),
+            "PASSWORD": os.getenv("DB_PASSWORD", "postgres"),
+            "HOST": os.getenv("DB_HOST", "localhost"),
+            "PORT": os.getenv("DB_PORT", "5433"),
+            "TEST": {
+                "NAME": f"test_{os.getenv('DB_NAME', 'vervilure_ci')}",
+            },
+            "OPTIONS": {
+                "client_encoding": "UTF8",
+            },
+        }
+    }
+
 
 # Disable migrations for faster test execution
 class DisableMigrations:
@@ -113,11 +139,25 @@ CACHES = {
     }
 }
 
+# Override cache for CI if Redis is available
+if IS_CI and os.getenv("REDIS_URL"):
+    CACHES = {
+        "default": {
+            "BACKEND": "django_redis.cache.RedisCache",
+            "LOCATION": os.getenv("REDIS_URL", "redis://localhost:6379/1"),
+            "OPTIONS": {
+                "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            },
+            "KEY_PREFIX": "test_vervilure",
+            "TIMEOUT": 300,
+        }
+    }
+
 # REST Framework settings - THROTTLING COMPLETELY DISABLED
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework.authentication.SessionAuthentication",
         "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "rest_framework.authentication.SessionAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
@@ -224,6 +264,10 @@ LOGGING = {
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 
+# Frontend/Backend URLs for email verification
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
+
 # Django Allauth settings for tests
 ACCOUNT_AUTHENTICATION_METHOD = "email"
 ACCOUNT_EMAIL_REQUIRED = True
@@ -262,3 +306,14 @@ SECURE_SSL_REDIRECT = False
 
 # Default primary key field type
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Google OAuth settings
+GOOGLE_OAUTH_CLIENT_ID = os.getenv("GOOGLE_OAUTH_CLIENT_ID", "test-client-id")
+
+# Debug output
+print(f"[Test Settings] Environment: {'CI' if IS_CI else 'Local'}")
+print(f"[Test Settings] Database: {DATABASES['default']['ENGINE']}")
+print(f"[Test Settings] URL Config: {ROOT_URLCONF}")
+print(f"[Test Settings] Throttling: {'Disabled' if not REST_FRAMEWORK.get('DEFAULT_THROTTLE_CLASSES') else 'Enabled'}")
+print(f"[Test Settings] Fast Passwords: {PASSWORD_HASHERS[0]}")
+print(f"[Test Settings] Celery Eager: {CELERY_TASK_ALWAYS_EAGER}")
