@@ -1,13 +1,11 @@
 import logging
-import uuid
 from datetime import datetime, timezone as dt_timezone
+from typing import List
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.db import transaction
-from django.http import HttpResponsePermanentRedirect, HttpResponseRedirect
-from django.shortcuts import redirect
 from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import never_cache
@@ -17,6 +15,7 @@ from rest_framework import permissions, status
 from rest_framework.decorators import action
 from rest_framework.mixins import RetrieveModelMixin, UpdateModelMixin
 from rest_framework.response import Response
+from rest_framework.throttling import BaseThrottle
 from rest_framework.viewsets import GenericViewSet
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -34,8 +33,7 @@ from .throttles import LoginRateThrottle, PasswordChangeRateThrottle, Registrati
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
-rest_framework_settings = getattr(settings, 'REST_FRAMEWORK', {})
-throttle_rates = rest_framework_settings.get('DEFAULT_THROTTLE_RATES', {})
+
 
 class AuthViewSet(GenericViewSet):
     """
@@ -53,25 +51,35 @@ class AuthViewSet(GenericViewSet):
         action_serializers = {
             "register": UserRegistrationSerializer,
             "login": UserLoginSerializer,
-            "google": GoogleOAuthSerializer,
+            "google_oauth": GoogleOAuthSerializer,  # Fixed action name
             "logout": None,  # No serializer needed for logout
             "refresh": None,  # Uses DRF JWT serializer
         }
 
         return action_serializers.get(self.action, self.serializer_class)
 
-    def get_throttles(self):
-        """Apply action-specific throttling."""
+    def get_throttles(self) -> List[BaseThrottle]:
+        """Apply action-specific throttling with proper error handling."""
         throttle_classes_by_action = {
             "register": [RegistrationRateThrottle],
             "login": [LoginRateThrottle],
-            "google": [LoginRateThrottle],  # Use same throttle as login
+            "google_oauth": [LoginRateThrottle],  # Use same throttle as login
             "logout": [],  # No throttling for logout
             "refresh": [],  # No throttling for token refresh
         }
 
         selected_throttles = throttle_classes_by_action.get(self.action, [])
-        return [throttle() for throttle in selected_throttles]
+
+        # Check if throttling is disabled (e.g., in tests)
+        if not getattr(settings, 'REST_FRAMEWORK', {}).get('DEFAULT_THROTTLE_RATES'):
+            logger.debug(f"Throttling disabled for action: {self.action}")
+            return []
+
+        try:
+            return [throttle() for throttle in selected_throttles]
+        except Exception as e:
+            logger.warning(f"Throttle initialization failed for {self.action}: {str(e)}")
+            return []
 
     def get_permissions(self):
         """Apply action-specific permissions."""
@@ -138,8 +146,6 @@ class AuthViewSet(GenericViewSet):
 
         try:
             # Use transaction on_commit to ensure task runs after DB commit
-            from django.db import transaction
-
             with transaction.atomic():
                 user = serializer.save()
                 refresh = RefreshToken.for_user(user)
@@ -159,9 +165,11 @@ class AuthViewSet(GenericViewSet):
                 )
 
                 # Schedule email verification AFTER transaction commits
-                from .tasks import send_verification_email
-
-                transaction.on_commit(lambda: send_verification_email.delay(user.id, user.email))
+                try:
+                    from .tasks import send_verification_email
+                    transaction.on_commit(lambda: send_verification_email.delay(user.id, user.email))
+                except ImportError:
+                    logger.warning("Email verification task not available")
 
                 return Response(
                     {
@@ -186,7 +194,8 @@ class AuthViewSet(GenericViewSet):
                 exc_info=True,
             )
             return Response(
-                {"error": "Registration failed. Please try again."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {"error": "Registration failed. Please try again."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
     @swagger_auto_schema(
@@ -305,7 +314,8 @@ class AuthViewSet(GenericViewSet):
                 exc_info=True,
             )
             return Response(
-                {"error": "Authentication failed. Please try again."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {"error": "Authentication failed. Please try again."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
     @swagger_auto_schema(
@@ -489,261 +499,25 @@ class AuthViewSet(GenericViewSet):
             )
             return Response({"error": "Invalid token."}, status=status.HTTP_400_BAD_REQUEST)
 
-    @swagger_auto_schema(
-        operation_description="Request password reset email",
-        tags=["Authentication"],
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={"email": openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_EMAIL)},
-            required=["email"],
-        ),
-        responses={200: "Password reset email sent", 400: "Invalid email", 429: "Rate limit exceeded"},
-    )
-    @action(detail=False, methods=["post"])
-    def password_reset(self, request) -> Response:
-        """Request password reset with rate limiting and security logging."""
-        email = request.data.get("email", "").lower().strip()
-        client_ip = self._get_client_ip(request)
-
-        # Rate limiting для password reset
-        cache_key = f"password_reset_attempts_{client_ip}"
-        attempts = cache.get(cache_key, 0)
-        if attempts >= 3:
-            logger.warning(
-                f"Password reset rate limit exceeded for IP {client_ip}",
-                extra={"ip_address": client_ip, "action": "password_reset_rate_limit"},
-            )
-            return Response(
-                {"error": "Too many password reset attempts. Please try again later."},
-                status=status.HTTP_429_TOO_MANY_REQUESTS,
-            )
-
-        if not email:
-            return Response({"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Increment attempts counter
-        cache.set(cache_key, attempts + 1, 3600)  # 1 hour
-
-        try:
-            user = User.objects.get(email=email, is_active=True)
-
-            # Generate password reset token
-            from django.contrib.auth.tokens import default_token_generator
-            from django.utils.encoding import force_bytes
-            from django.utils.http import urlsafe_base64_encode
-
-            token = default_token_generator.make_token(user)
-            uid = urlsafe_base64_encode(force_bytes(user.pk))
-
-            # Send password reset email
-            from .tasks import send_password_reset_email
-
-            send_password_reset_email.delay(user.id, token, uid)
-
-            logger.info(
-                f"Password reset requested: {email}",
-                extra={"user_id": user.id, "email": email, "ip_address": client_ip, "action": "password_reset_request"},
-            )
-
-        except User.DoesNotExist:
-            # Don't reveal if email exists - security best practice
-            logger.info(
-                f"Password reset requested for non-existent email: {email}",
-                extra={"email": email, "ip_address": client_ip, "action": "password_reset_nonexistent"},
-            )
-
-        # Always return success to prevent email enumeration
-        return Response(
-            {"message": "If an account with that email exists, a password reset link has been sent."},
-            status=status.HTTP_200_OK,
-        )
-
-    @swagger_auto_schema(
-        operation_description="Confirm password reset with token",
-        tags=["Authentication"],
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={
-                "uid": openapi.Schema(type=openapi.TYPE_STRING),
-                "token": openapi.Schema(type=openapi.TYPE_STRING),
-                "new_password": openapi.Schema(type=openapi.TYPE_STRING),
-            },
-            required=["uid", "token", "new_password"],
-        ),
-        responses={200: "Password reset successful", 400: "Invalid token or validation errors"},
-    )
-    @action(detail=False, methods=["post"])
-    def password_reset_confirm(self, request) -> Response:
-        """Confirm password reset with secure token validation."""
-        uid = request.data.get("uid")
-        token = request.data.get("token")
-        new_password = request.data.get("new_password")
-        client_ip = self._get_client_ip(request)
-
-        if not all([uid, token, new_password]):
-            return Response({"error": "UID, token, and new password are required"}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            from django.contrib.auth.tokens import default_token_generator
-            from django.utils.http import urlsafe_base64_decode
-
-            # Decode user ID
-            user_id = urlsafe_base64_decode(uid).decode()
-            user = User.objects.get(pk=user_id, is_active=True)
-
-            # Validate token
-            if not default_token_generator.check_token(user, token):
-                logger.warning(
-                    f"Invalid password reset token for user: {user.email}",
-                    extra={"user_id": user.id, "ip_address": client_ip, "action": "password_reset_invalid_token"},
-                )
-                return Response({"error": "Invalid or expired token"}, status=status.HTTP_400_BAD_REQUEST)
-
-            # Validate password strength
-            from django.contrib.auth.password_validation import validate_password
-
-            try:
-                validate_password(new_password, user)
-            except Exception as e:
-                return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-            # Update password
-            user.set_password(new_password)
-            user.save(update_fields=["password"])
-
-            logger.info(
-                f"Password reset completed: {user.email}",
-                extra={"user_id": user.id, "ip_address": client_ip, "action": "password_reset_success"},
-            )
-
-            return Response({"message": "Password has been reset successfully"}, status=status.HTTP_200_OK)
-
-        except (User.DoesNotExist, ValueError, TypeError):
-            logger.warning(
-                f"Password reset attempt with invalid UID: {uid}",
-                extra={"ip_address": client_ip, "action": "password_reset_invalid_uid"},
-            )
-            return Response({"error": "Invalid or expired token"}, status=status.HTTP_400_BAD_REQUEST)
-
-    @swagger_auto_schema(
-        operation_description="Verify email via GET request from email link",
-        tags=["Authentication"],
-        manual_parameters=[
-            openapi.Parameter(
-                "token",
-                openapi.IN_PATH,
-                description="Email verification token",
-                type=openapi.TYPE_STRING,
-                format=openapi.FORMAT_UUID,
-            )
-        ],
-        responses={302: "Redirect to frontend with status", 400: "Invalid token - redirect to error page"},
-    )
-    @action(detail=False, methods=["get"], url_path="verify-email/(?P<token>[^/.]+)")
-    def verify_email_link(self, request, token=None) -> HttpResponseRedirect | HttpResponsePermanentRedirect:
-        """
-        Verify email via GET request from email link.
-        Redirects to frontend with verification status.
-        """
-        client_ip = self._get_client_ip(request)
-
-        try:
-            # Validate UUID format
-            token_uuid = uuid.UUID(str(token))
-        except (ValueError, TypeError):
-            logger.warning(f"Invalid token format in email verification: {token}", extra={"ip_address": client_ip})
-            return redirect(f"{settings.FRONTEND_URL}/verify-email/error?reason=invalid_format")
-
-        try:
-            with transaction.atomic():
-                user = User.objects.select_for_update().get(email_verification_token=token_uuid)
-
-                if user.is_email_verified:
-                    logger.info(
-                        f"Email already verified (GET): {user.email}",
-                        extra={"user_id": user.id, "ip_address": client_ip},
-                    )
-                    return redirect(f"{settings.FRONTEND_URL}/verify-email/success?already_verified=true")
-
-                if not user.is_verification_token_valid():
-                    logger.warning(
-                        f"Expired verification token used (GET): {user.email}",
-                        extra={"user_id": user.id, "ip_address": client_ip},
-                    )
-                    return redirect(f"{settings.BACKEND_URL}/verify-email/error?reason=expired")
-
-                # Mark as verified and invalidate token
-                user.is_email_verified = True
-                user.is_active = True
-                user.email_verification_token = uuid.uuid4()
-                user.save(update_fields=["is_email_verified", "is_active", "email_verification_token"])
-
-                logger.info(
-                    f"Email verified successfully (GET): {user.email}",
-                    extra={"user_id": user.id, "ip_address": client_ip},
-                )
-
-                # Redirect to success page
-                return redirect(f"{settings.FRONTEND_URL}/verify-email/success")
-
-        except User.DoesNotExist:
-            logger.warning(f"Invalid verification token (GET): {token}", extra={"ip_address": client_ip})
-            return redirect(f"{settings.FRONTEND_URL}/verify-email/error?reason=invalid_token")
-
-    @swagger_auto_schema(
-        operation_description="Resend email verification",
-        tags=["Authentication"],
-        responses={
-            200: "Verification email sent",
-            400: "Email already verified or user not found",
-            429: "Rate limit exceeded",
-        },
-    )
-    @action(detail=False, methods=["post"], permission_classes=[permissions.IsAuthenticated])
-    def resend_verification(self, request) -> Response:
-        """Resend email verification with rate limiting."""
-        user = request.user
-        client_ip = self._get_client_ip(request)
-
-        # Rate limiting
-        cache_key = f"email_verification_{user.id}"
-        if cache.get(cache_key):
-            return Response(
-                {"error": "Verification email already sent recently. Please wait."},
-                status=status.HTTP_429_TOO_MANY_REQUESTS,
-            )
-
-        if user.is_email_verified:
-            return Response({"message": "Email is already verified"}, status=status.HTTP_200_OK)
-
-        # Set rate limit (5 minutes)
-        cache.set(cache_key, True, 300)
-
-        # Send verification email
-        from .tasks import send_verification_email
-
-        send_verification_email.delay(user.id)
-
-        logger.info(
-            f"Verification email resent: {user.email}",
-            extra={"user_id": user.id, "ip_address": client_ip, "action": "verification_resend"},
-        )
-
-        return Response({"message": "Verification email sent"}, status=status.HTTP_200_OK)
-
     # Private helper methods for security operations
     def _get_client_ip(self, request) -> str:
         """Extract and validate client IP address."""
+        # Check X-Forwarded-For first (load balancer/proxy)
         x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
         if x_forwarded_for:
             ip = x_forwarded_for.split(",")[0].strip()
         else:
-            ip = request.META.get("REMOTE_ADDR", "0.0.0.0")
+            # Check X-Real-IP (nginx)
+            x_real_ip = request.META.get("HTTP_X_REAL_IP")
+            if x_real_ip:
+                ip = x_real_ip.strip()
+            else:
+                # Fallback to REMOTE_ADDR
+                ip = request.META.get("REMOTE_ADDR", "0.0.0.0")
 
         # Basic IP validation
         try:
             import ipaddress
-
             ipaddress.ip_address(ip)
             return ip
         except ValueError:
@@ -754,13 +528,13 @@ class AuthViewSet(GenericViewSet):
         """Check if registration is blocked for IP."""
         cache_key = f"registration_attempts_{ip}"
         attempts = cache.get(cache_key, 0)
-        return attempts >= 500  # Max 5 registrations per hour
+        return attempts >= 5  # Max 5 registrations per hour
 
     def _is_login_blocked(self, ip: str, email: str) -> bool:
         """Check if login is blocked for IP/email combination."""
         cache_key = f"login_attempts_{ip}_{email}"
         attempts = cache.get(cache_key, 0)
-        return attempts >= 500  # Max 5 failed attempts per hour
+        return attempts >= 5  # Max 5 failed attempts per hour
 
     def _increment_registration_attempts(self, ip: str) -> None:
         """Increment registration attempt counter."""
@@ -808,25 +582,22 @@ class UserProfileViewSet(RetrieveModelMixin, UpdateModelMixin, GenericViewSet):
     serializer_class = UserProfileSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-    def get_throttles(self):
-        """Apply throttling for sensitive operations."""
-        throttle_classes_by_action = {
-            "register": [RegistrationRateThrottle],
-            "login": [LoginRateThrottle],
-            "google": [LoginRateThrottle],
-            "logout": [],
-            "refresh": [],
-        }
-
-        selected_throttles = throttle_classes_by_action.get(self.action, [])
-        if not throttle_rates:
-            return []
-
-        return [throttle() for throttle in selected_throttles]
-
+    def get_throttles(self) -> List[BaseThrottle]:
+        """Apply throttling for sensitive operations with proper error handling."""
+        # Only apply throttling for password change
         if self.action == "change_password":
-            return [PasswordChangeRateThrottle()]
-        return super().get_throttles()
+            try:
+                # Check if throttling is disabled (e.g., in tests)
+                if not getattr(settings, 'REST_FRAMEWORK', {}).get('DEFAULT_THROTTLE_RATES'):
+                    logger.debug("Throttling disabled for password change")
+                    return []
+                return [PasswordChangeRateThrottle()]
+            except Exception as e:
+                logger.warning(f"Password change throttle initialization failed: {str(e)}")
+                return []
+
+        # No throttling for other actions
+        return []
 
     def get_object(self) -> User:
         """Return current authenticated user."""
@@ -853,7 +624,8 @@ class UserProfileViewSet(RetrieveModelMixin, UpdateModelMixin, GenericViewSet):
 
         if response.status_code == 200:
             logger.info(
-                f"Profile updated: {request.user.email}", extra={"user_id": request.user.id, "action": "profile_update"}
+                f"Profile updated: {request.user.email}",
+                extra={"user_id": request.user.id, "action": "profile_update"}
             )
 
         return response
@@ -935,117 +707,3 @@ class UserProfileViewSet(RetrieveModelMixin, UpdateModelMixin, GenericViewSet):
         if x_forwarded_for:
             return x_forwarded_for.split(",")[0].strip()
         return request.META.get("REMOTE_ADDR", "0.0.0.0")
-
-    @swagger_auto_schema(
-        operation_description="Update specific user address",
-        tags=["User Management"],
-        request_body=UserAddressSerializer,
-        responses={200: UserAddressSerializer, 404: "Address not found"},
-    )
-    @action(detail=False, methods=["patch"], url_path="addresses/(?P<address_id>[^/.]+)")
-    def update_address(self, request, address_id=None) -> Response:
-        """Update specific user address."""
-        try:
-            address = UserAddress.objects.get(id=address_id, user=request.user)
-        except UserAddress.DoesNotExist:
-            return Response({"error": "Address not found"}, status=status.HTTP_404_NOT_FOUND)
-
-        serializer = UserAddressSerializer(address, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-
-            logger.info(
-                f"Address updated: {request.user.email}",
-                extra={"user_id": request.user.id, "address_id": address.id, "action": "address_update"},
-            )
-
-            return Response(serializer.data)
-
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    @swagger_auto_schema(
-        operation_description="Delete user address",
-        tags=["User Management"],
-        responses={204: "Address deleted", 404: "Address not found"},
-    )
-    @action(detail=False, methods=["delete"], url_path="addresses/(?P<address_id>[^/.]+)")
-    def delete_address(self, request, address_id=None) -> Response:
-        """Delete specific user address."""
-        try:
-            address = UserAddress.objects.get(id=address_id, user=request.user)
-            address.delete()
-
-            logger.info(
-                f"Address deleted: {request.user.email}",
-                extra={"user_id": request.user.id, "address_id": address_id, "action": "address_delete"},
-            )
-
-            return Response(status=status.HTTP_204_NO_CONTENT)
-
-        except UserAddress.DoesNotExist:
-            return Response({"error": "Address not found"}, status=status.HTTP_404_NOT_FOUND)
-
-    @swagger_auto_schema(
-        operation_description="Set default user address",
-        tags=["User Management"],
-        responses={200: "Default address updated", 404: "Address not found"},
-    )
-    @action(detail=False, methods=["post"], url_path="addresses/(?P<address_id>[^/.]+)/set-default")
-    def set_default_address(self, request, address_id=None) -> Response:
-        """Set address as default."""
-        try:
-            # Remove default from all addresses
-            UserAddress.objects.filter(user=request.user, is_default=True).update(is_default=False)
-
-            # Set new default
-            address = UserAddress.objects.get(id=address_id, user=request.user)
-            address.is_default = True
-            address.save(update_fields=["is_default"])
-
-            logger.info(
-                f"Default address set: {request.user.email}",
-                extra={"user_id": request.user.id, "address_id": address.id, "action": "address_set_default"},
-            )
-
-            return Response({"message": "Default address updated"})
-
-        except UserAddress.DoesNotExist:
-            return Response({"error": "Address not found"}, status=status.HTTP_404_NOT_FOUND)
-
-    @swagger_auto_schema(
-        operation_description="Delete user account",
-        tags=["User Management"],
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={
-                "password": openapi.Schema(type=openapi.TYPE_STRING, description="Current password for confirmation")
-            },
-            required=["password"],
-        ),
-        responses={204: "Account deleted", 400: "Invalid password"},
-    )
-    @action(detail=False, methods=["delete"])
-    def delete_account(self, request) -> Response:
-        """Delete user account with password confirmation."""
-        password = request.data.get("password")
-
-        if not password:
-            return Response({"error": "Password confirmation is required"}, status=status.HTTP_400_BAD_REQUEST)
-
-        if not request.user.check_password(password):
-            logger.warning(
-                f"Account deletion attempt with invalid password: {request.user.email}",
-                extra={"user_id": request.user.id, "action": "account_delete_invalid_password"},
-            )
-            return Response({"error": "Invalid password"}, status=status.HTTP_400_BAD_REQUEST)
-
-        user_email = request.user.email
-        user_id = request.user.id
-
-        # Soft delete or hard delete based on business requirements
-        request.user.is_active = False
-        request.user.save(update_fields=["is_active"])
-
-        logger.info(f"Account deleted: {user_email}", extra={"user_id": user_id, "action": "account_delete"})
-
-        return Response(status=status.HTTP_204_NO_CONTENT)
