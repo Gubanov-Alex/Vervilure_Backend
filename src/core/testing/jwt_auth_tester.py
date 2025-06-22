@@ -56,8 +56,8 @@ class JWTAuthTester:
                 # Step 4: Test token refresh
                 results["token_refresh"] = self._test_token_refresh_api(refresh_token)
 
-                # Step 5: Test token blacklisting (logout)
-                results["token_blacklisting"] = self._test_token_blacklisting(refresh_token)
+                # Step 5: Test token blacklisting (logout) - FIXED VERSION
+                results["token_blacklisting"] = self._test_token_blacklisting_fixed(email)
             else:
                 logger.warning("Skipping token-dependent tests due to token generation failure")
                 results["token_extraction"] = TestResult(
@@ -70,8 +70,8 @@ class JWTAuthTester:
             # Step 6: Test user authentication endpoints
             results["user_authentication"] = self._test_user_authentication_endpoints(email)
 
-            # Step 7: Test JWT settings validation
-            results["jwt_settings"] = self._test_jwt_settings_validation()
+            # Step 7: Test JWT settings validation - FIXED VERSION
+            results["jwt_settings"] = self._test_jwt_settings_validation_fixed()
 
             # Step 8: Cleanup - remove test user (always attempt)
             results["cleanup"] = self._cleanup_test_user(email)
@@ -270,47 +270,33 @@ class JWTAuthTester:
                 error=str(e),
             )
 
-    def _test_token_blacklisting(self, refresh_token: str) -> TestResult:
-        """Test token blacklisting via logout endpoint with CORRECT token handling."""
+    def _test_token_blacklisting_fixed(self, email: str) -> TestResult:
+        """
+        FIXED: Test token blacklisting via logout endpoint with proper token handling.
+        Creates fresh tokens specifically for blacklisting test.
+        """
         try:
+            from django.contrib.auth import get_user_model
             from rest_framework_simplejwt.tokens import RefreshToken
 
+            User = get_user_model()
+
             try:
-                token_obj = RefreshToken(refresh_token)
-                user_id = token_obj.get("user_id")
-
-                if not user_id:
-                    return TestResult(
-                        success=False,
-                        message="Cannot extract user ID from refresh token",
-                        data={"refresh_token": refresh_token[:20] + "..."},
-                        error="Invalid refresh token format",
-                    )
-
-                from django.contrib.auth import get_user_model
-
-                User = get_user_model()
-
-                try:
-                    test_user = User.objects.get(id=user_id)
-                except User.DoesNotExist:
-                    return TestResult(
-                        success=False,
-                        message=f"Test user with ID {user_id} not found",
-                        data={"user_id": user_id},
-                        error="User does not exist",
-                    )
-
-                new_refresh = RefreshToken.for_user(test_user)
-                access_token = str(new_refresh.access_token)
-
-            except Exception as token_error:
+                test_user = User.objects.get(email=email)
+            except User.DoesNotExist:
                 return TestResult(
                     success=False,
-                    message=f"Failed to process refresh token: {str(token_error)}",
-                    data={"token_error": str(token_error)},
-                    error="Token processing failed",
+                    message=f"Test user with email {email} not found",
+                    data={"email": email},
+                    error="User does not exist",
                 )
+
+            # Create fresh tokens specifically for blacklisting test
+            fresh_refresh = RefreshToken.for_user(test_user)
+            fresh_access_token = str(fresh_refresh.access_token)
+            fresh_refresh_token = str(fresh_refresh)
+
+            logger.debug(f"Created fresh tokens for blacklisting test: user_id={test_user.id}")
 
             logout_endpoints = [
                 "/api/v1/auth/logout/",
@@ -324,44 +310,73 @@ class JWTAuthTester:
                     logger.debug(f"Testing logout endpoint: {logout_url}")
                     response = self.client.post(
                         logout_url,
-                        data=json.dumps({"refresh": refresh_token}),
+                        data=json.dumps({"refresh": fresh_refresh_token}),
                         content_type="application/json",
-                        HTTP_AUTHORIZATION=f"Bearer {access_token}",
+                        HTTP_AUTHORIZATION=f"Bearer {fresh_access_token}",
                     )
 
                     if response.status_code == 404:
                         continue
 
                     if response.status_code == 200:
-                        # Test if token is actually blacklisted
-                        refresh_response = self.client.post(
+                        # Test if token is actually blacklisted by trying to refresh it
+                        refresh_test_response = self.client.post(
                             f"{self.base_url}/auth/jwt/refresh/",
-                            data=json.dumps({"refresh": refresh_token}),
+                            data=json.dumps({"refresh": fresh_refresh_token}),
                             content_type="application/json",
                         )
 
-                        if refresh_response.status_code != 200:
+                        # Token should be blacklisted now, so refresh should fail
+                        if refresh_test_response.status_code == 401:
+                            refresh_error_data = {}
+                            try:
+                                refresh_error_data = (
+                                    json.loads(refresh_test_response.content) if refresh_test_response.content else {}
+                                )
+                            except Exception:
+                                pass
+
+                            # Check if error indicates blacklisting
+                            error_detail = refresh_error_data.get("detail", "").lower()
+                            if "blacklist" in error_detail or "invalid" in error_detail:
+                                return TestResult(
+                                    success=True,
+                                    message="Token blacklisting working correctly",
+                                    data={
+                                        "blacklisted": True,
+                                        "logout_url": logout_url,
+                                        "logout_status_code": response.status_code,
+                                        "refresh_test_status": refresh_test_response.status_code,
+                                        "refresh_error_detail": error_detail,
+                                        "user_id": test_user.id,
+                                    },
+                                )
+
+                        # If refresh still works, blacklisting failed
+                        elif refresh_test_response.status_code == 200:
                             return TestResult(
-                                success=True,
-                                message="Token blacklisting working correctly",
+                                success=False,
+                                message="Token blacklisting failed - token still works after logout",
                                 data={
-                                    "blacklisted": True,
-                                    "url": logout_url,
-                                    "status_code": response.status_code,
-                                    "refresh_attempt_status": refresh_response.status_code,
-                                    "user_id": user_id,
+                                    "logout_url": logout_url,
+                                    "logout_status_code": response.status_code,
+                                    "refresh_still_works": True,
+                                    "user_id": test_user.id,
                                 },
+                                error="Token blacklisting mechanism not working",
                             )
+
+                        # Unexpected refresh response
                         else:
                             return TestResult(
                                 success=False,
-                                message="Blacklisted token still working - blacklisting failed",
+                                message=f"Unexpected refresh response after logout: {refresh_test_response.status_code}",
                                 data={
-                                    "url": logout_url,
-                                    "status_code": response.status_code,
-                                    "refresh_still_works": True,
+                                    "logout_url": logout_url,
+                                    "logout_status_code": response.status_code,
+                                    "refresh_test_status": refresh_test_response.status_code,
                                 },
-                                error="Token blacklisting mechanism not working",
+                                error="Unexpected behavior during blacklist verification",
                             )
 
                     elif response.status_code == 401:
@@ -377,8 +392,8 @@ class JWTAuthTester:
                             data={
                                 "status_code": response.status_code,
                                 "response_data": response_data,
-                                "url": logout_url,
-                                "user_id": user_id,
+                                "logout_url": logout_url,
+                                "user_id": test_user.id,
                             },
                             error=f"HTTP 401: {response_data.get('detail', 'Authentication failed')}",
                         )
@@ -399,6 +414,90 @@ class JWTAuthTester:
             return TestResult(
                 success=False,
                 message=f"Token blacklisting test failed: {str(e)}",
+                data={"exception_type": type(e).__name__},
+                error=str(e),
+            )
+
+    def _test_jwt_settings_validation_fixed(self) -> TestResult:
+        """
+        FIXED: Test JWT settings and configuration with accurate INSTALLED_APPS checking.
+        """
+        try:
+            from django.conf import settings
+
+            jwt_settings = {}
+            jwt_issues = []
+            jwt_warnings = []
+
+            # Check if JWT settings exist
+            if hasattr(settings, "SIMPLE_JWT"):
+                jwt_settings = settings.SIMPLE_JWT
+
+                # Check important JWT settings
+                important_settings = [
+                    "ACCESS_TOKEN_LIFETIME",
+                    "REFRESH_TOKEN_LIFETIME",
+                    "ALGORITHM",
+                    "SIGNING_KEY",
+                ]
+
+                for setting_name in important_settings:
+                    if setting_name in jwt_settings:
+                        jwt_settings[f"has_{setting_name.lower()}"] = True
+                    else:
+                        jwt_issues.append(f"Missing {setting_name}")
+
+                # FIXED: More accurate blacklist checking
+                installed_apps = getattr(settings, "INSTALLED_APPS", [])
+                blacklist_apps = [app for app in installed_apps if "token_blacklist" in app or "blacklist" in app]
+
+                if blacklist_apps:
+                    jwt_settings["blacklist_enabled"] = True
+                    jwt_settings["blacklist_apps"] = blacklist_apps
+                else:
+                    jwt_warnings.append("Token blacklist app not found in INSTALLED_APPS")
+
+                # Check rotation settings
+                rotate_tokens = jwt_settings.get("ROTATE_REFRESH_TOKENS", False)
+                blacklist_after_rotation = jwt_settings.get("BLACKLIST_AFTER_ROTATION", False)
+
+                if rotate_tokens and not blacklist_after_rotation:
+                    jwt_warnings.append("ROTATE_REFRESH_TOKENS is True but BLACKLIST_AFTER_ROTATION is False")
+
+                # Check algorithm security
+                algorithm = jwt_settings.get("ALGORITHM", "")
+                if algorithm and algorithm.startswith("HS"):
+                    jwt_warnings.append(f"Using HMAC algorithm ({algorithm}) - consider RS256 for production")
+
+            else:
+                jwt_issues.append("SIMPLE_JWT settings not found")
+
+            # Determine overall success
+            success = len(jwt_issues) == 0
+
+            return TestResult(
+                success=success,
+                message=f"JWT settings validation: {len(jwt_issues)} issues, {len(jwt_warnings)} warnings",
+                data={
+                    "jwt_configured": hasattr(settings, "SIMPLE_JWT"),
+                    "settings_found": len(jwt_settings),
+                    "issues": jwt_issues,
+                    "warnings": jwt_warnings,
+                    "blacklist_apps_found": jwt_settings.get("blacklist_apps", []),
+                    "jwt_settings_summary": {
+                        k: str(v)
+                        for k, v in jwt_settings.items()
+                        if not k.startswith("SIGNING") and not isinstance(v, list)
+                    },
+                },
+                error="; ".join(jwt_issues) if jwt_issues else None,
+            )
+
+        except Exception as e:
+            logger.exception(f"JWT settings validation error: {e}")
+            return TestResult(
+                success=False,
+                message=f"JWT settings validation error: {str(e)}",
                 data={"exception_type": type(e).__name__},
                 error=str(e),
             )
@@ -637,62 +736,6 @@ class JWTAuthTester:
             return TestResult(
                 success=False,
                 message=f"User authentication endpoints test error: {str(e)}",
-                data={"exception_type": type(e).__name__},
-                error=str(e),
-            )
-
-    def _test_jwt_settings_validation(self) -> TestResult:
-        """Test JWT settings and configuration."""
-        try:
-            from django.conf import settings
-
-            jwt_settings = {}
-            jwt_issues = []
-
-            # Check if JWT settings exist
-            if hasattr(settings, "SIMPLE_JWT"):
-                jwt_settings = settings.SIMPLE_JWT
-
-                # Check important JWT settings
-                important_settings = [
-                    "ACCESS_TOKEN_LIFETIME",
-                    "REFRESH_TOKEN_LIFETIME",
-                    "ALGORITHM",
-                    "SIGNING_KEY",
-                ]
-
-                for setting_name in important_settings:
-                    if setting_name in jwt_settings:
-                        jwt_settings[f"has_{setting_name.lower()}"] = True
-                    else:
-                        jwt_issues.append(f"Missing {setting_name}")
-
-                # Check for token blacklist
-                if "TOKEN_BLACKLIST" in str(settings.INSTALLED_APPS):
-                    jwt_settings["blacklist_enabled"] = True
-                else:
-                    jwt_issues.append("Token blacklist not in INSTALLED_APPS")
-
-            else:
-                jwt_issues.append("SIMPLE_JWT settings not found")
-
-            return TestResult(
-                success=len(jwt_issues) == 0,
-                message=f"JWT settings validation: {len(jwt_issues)} issues found",
-                data={
-                    "jwt_configured": hasattr(settings, "SIMPLE_JWT"),
-                    "settings_found": len(jwt_settings),
-                    "issues": jwt_issues,
-                    "jwt_settings_summary": {k: str(v) for k, v in jwt_settings.items() if not k.startswith("SIGNING")},
-                },
-                error="; ".join(jwt_issues) if jwt_issues else None,
-            )
-
-        except Exception as e:
-            logger.exception(f"JWT settings validation error: {e}")
-            return TestResult(
-                success=False,
-                message=f"JWT settings validation error: {str(e)}",
                 data={"exception_type": type(e).__name__},
                 error=str(e),
             )

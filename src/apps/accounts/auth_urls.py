@@ -1,12 +1,12 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
-from rest_framework_simplejwt.views import (
-    TokenBlacklistView,
-    TokenObtainPairView,
-    TokenRefreshView,
-    TokenVerifyView,
-)
 
+from .jwt_views import (
+    JWTTokenBlacklistView,
+    JWTTokenObtainPairView,
+    JWTTokenRefreshView,
+    JWTTokenVerifyView,
+)
 from .views import AuthViewSet
 
 # Authentication router for organized endpoints
@@ -27,13 +27,18 @@ urlpatterns = [
                 path("logout/", AuthViewSet.as_view({"post": "logout"}), name="logout"),
                 # Social authentication
                 path("google/", AuthViewSet.as_view({"post": "google_oauth"}), name="google_oauth"),
-                # JWT endpoints (standalone views)
-                path("jwt/", TokenObtainPairView.as_view(), name="token_obtain_pair"),
-                path("jwt/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
-                path("jwt/verify/", TokenVerifyView.as_view(), name="token_verify"),
-                path("jwt/blacklist/", TokenBlacklistView.as_view(), name="token_blacklist"),
-                # Future: path('facebook/', AuthViewSet.as_view({'post': 'facebook_oauth'}), name='facebook_oauth'),
-                # Future: path('apple/', AuthViewSet.as_view({'post': 'apple_oauth'}), name='apple_oauth'),
+            ]
+        ),
+    ),
+    # 🔑 JWT Authentication endpoints - отдельная группа
+    path(
+        "jwt/",
+        include(
+            [
+                path("", JWTTokenObtainPairView.as_view(), name="token_obtain_pair"),
+                path("refresh/", JWTTokenRefreshView.as_view(), name="token_refresh"),
+                path("verify/", JWTTokenVerifyView.as_view(), name="token_verify"),
+                path("blacklist/", JWTTokenBlacklistView.as_view(), name="token_blacklist"),
             ]
         ),
     ),
@@ -65,13 +70,13 @@ urlpatterns = [
             ]
         ),
     ),
-    # Token management
+    # Legacy token management (для обратной совместимости)
     path(
         "token/",
         include(
             [
-                # path('refresh/', include('rest_framework_simplejwt.urls')),  # JWT refresh endpoint
-                path("blacklist/", AuthViewSet.as_view({"post": "logout"}), name="token_blacklist"),  # Alias for logout
+                # Алиас для logout через token blacklist
+                path("blacklist/", AuthViewSet.as_view({"post": "logout"}), name="legacy_token_blacklist"),
             ]
         ),
     ),

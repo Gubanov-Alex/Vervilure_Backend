@@ -618,9 +618,36 @@ if not IS_CI:
 
 # Swagger Configuration
 SWAGGER_SETTINGS = {
-    "SECURITY_DEFINITIONS": {"Bearer": {"type": "apiKey", "name": "Authorization", "in": "header"}},
+    "SECURITY_DEFINITIONS": {
+        "Bearer": {
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header",
+            "description": """JWT token: Bearer <your_token>
+
+How to get a token:
+1. POST /api/v1/auth/jwt/ with your email and password
+2. Copy the access token from the response
+3. Press "Authorize" button in Swagger UI
+4. Enter: Bearer <your_access_token>
+
+Example: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...""",
+        }
+    },
     "USE_SESSION_AUTH": False,
     "JSON_EDITOR": True,
+    # JWT-specific UI settings
+    "SUPPORTED_SUBMIT_METHODS": ["get", "post", "put", "delete", "patch"],
+    "OPERATIONS_SORTER": "alpha",
+    "TAGS_SORTER": "alpha",
+    "DOC_EXPANSION": "list",
+    "DEEP_LINKING": True,
+    "SHOW_EXTENSIONS": True,
+    "DEFAULT_MODEL_RENDERING": "model",
+    # Authorization persistence settings
+    "PERSIST_AUTH": True,
+    "REFETCH_SCHEMA_WITH_AUTH": True,
+    "REFETCH_SCHEMA_ON_LOGOUT": True,
 }
 
 # Environment-specific overrides

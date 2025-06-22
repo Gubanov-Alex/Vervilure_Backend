@@ -2,7 +2,7 @@ import logging
 
 from django.core.management.base import BaseCommand, CommandError
 from django.core.management.color import no_style
-from src.apps.accounts.utils.email_testing import EmailTester, create_email_tester
+from src.core.testing.email_testing import EmailTester, create_email_tester
 
 logger = logging.getLogger(__name__)
 

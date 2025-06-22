@@ -16,8 +16,9 @@ schema_view = get_schema_view(
         default_version="v1",
         description="REST API for Vervilure e-commerce platform",
         terms_of_service="https://www.vervilure.com/terms/",
-        contact=openapi.Contact(email="future.htm@gmail.com",
-                                url="https://www.linkedin.com/in/oleksandr-gubanov-python-developer/"),
+        contact=openapi.Contact(
+            email="future.htm@gmail.com", url="https://www.linkedin.com/in/oleksandr-gubanov-python-developer/"
+        ),
         license=openapi.License(name="MIT License"),
     ),
     public=True,

@@ -199,7 +199,7 @@ class EmailVerificationTestCase(TestCase):
     def test_race_condition_protection(self):
         """Test concurrent verification attempts with simplified expectations."""
         import time
-        from threading import Thread, Event
+        from threading import Event, Thread
 
         # Use simpler threading approach instead of ThreadPoolExecutor
         results = []
@@ -252,9 +252,7 @@ class EmailVerificationTestCase(TestCase):
         # All responses should be either success (200) or client error (400)
         valid_status_codes = [200, 201, 400]
         for status_code, response_data in results:
-            assert status_code in valid_status_codes, (
-                f"Unexpected status code {status_code}: {response_data}"
-            )
+            assert status_code in valid_status_codes, f"Unexpected status code {status_code}: {response_data}"
 
         # If any verification succeeded, user should be verified
         success_responses = [r for r in results if r[0] in [200, 201]]
@@ -273,9 +271,7 @@ class EmailVerificationTestCase(TestCase):
             if single_response.status_code in [200, 201]:
                 # Single verification works, so the race condition test is valid
                 self.user.refresh_from_db()
-                assert self.user.is_email_verified is True, (
-                    "Single verification should work after race condition test"
-                )
+                assert self.user.is_email_verified is True, "Single verification should work after race condition test"
             else:
                 # If even single verification fails, there might be a deeper issue
                 # But we'll mark the race condition protection as working (no system crashes)
