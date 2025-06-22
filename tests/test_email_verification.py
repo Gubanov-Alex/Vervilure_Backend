@@ -197,7 +197,7 @@ class EmailVerificationTestCase(TestCase):
             ), f"Expected 'already verified' message in response: {response.data}"
 
     def test_race_condition_protection(self):
-        """Test concurrent verification attempts with improved thread handling."""
+        """Test concurrent verification attempts with proper expectations."""
 
         def verify_email():
             """Single verification attempt in thread."""
@@ -232,9 +232,31 @@ class EmailVerificationTestCase(TestCase):
             self.user.is_email_verified is True
         ), f"User should be verified after race condition test. Results: {results}"
 
-        # At least one request should succeed
+        # In a race condition scenario, we expect:
+        # - At least one successful verification (200)
+        # - Other attempts should fail with "Invalid verification token" (400)
+        #   because the token gets invalidated after first successful use
+
         success_responses = [r for r in results if r[0] in [200, 201]]
+        invalid_token_responses = [r for r in results if r[0] == 400 and "invalid" in str(r[1]).lower()]
+
+        # At least one should succeed
         assert len(success_responses) >= 1, f"At least one verification should succeed. Results: {results}"
+
+        # Others should fail with invalid token (this is expected behavior)
+        # The total should be 3 (all requests completed)
+        assert len(results) == 3, f"Expected 3 results, got {len(results)}: {results}"
+
+        # If we have failures, they should be due to invalid token (expected race condition behavior)
+        if len(success_responses) < 3:
+            failure_responses = [r for r in results if r[0] not in [200, 201]]
+            for status_code, response_data in failure_responses:
+                # Should be 400 with invalid token message
+                assert status_code == 400, f"Expected 400 for failed attempts, got {status_code}: {response_data}"
+                response_str = str(response_data).lower()
+                assert (
+                    "invalid" in response_str or "token" in response_str
+                ), f"Expected invalid token error, got: {response_data}"
 
     @patch("src.apps.accounts.tasks.send_verification_email.delay")
     def test_resend_verification_endpoint(self, mock_send_email):
