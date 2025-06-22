@@ -751,18 +751,12 @@ class AuthViewSet(GenericViewSet):
             type=openapi.TYPE_OBJECT,
             properties={
                 "token": openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    format=openapi.FORMAT_UUID,
-                    description="Email verification token"
+                    type=openapi.TYPE_STRING, format=openapi.FORMAT_UUID, description="Email verification token"
                 )
             },
-            required=["token"]
+            required=["token"],
         ),
-        responses={
-            200: "Email verified successfully",
-            400: "Invalid or expired token",
-            429: "Rate limit exceeded"
-        }
+        responses={200: "Email verified successfully", 400: "Invalid or expired token", 429: "Rate limit exceeded"},
     )
     @action(detail=False, methods=["post"])
     def verify_email(self, request) -> Response:
@@ -774,10 +768,7 @@ class AuthViewSet(GenericViewSet):
         client_ip = self._get_client_ip(request)
 
         if not token:
-            return Response(
-                {"error": "Token is required"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({"error": "Token is required"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             # Validate UUID format
@@ -785,68 +776,42 @@ class AuthViewSet(GenericViewSet):
         except (ValueError, TypeError):
             logger.warning(
                 f"Invalid token format in email verification: {token}",
-                extra={"ip_address": client_ip, "action": "verify_email_invalid_format"}
+                extra={"ip_address": client_ip, "action": "verify_email_invalid_format"},
             )
-            return Response(
-                {"error": "Invalid token format"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({"error": "Invalid token format"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             with transaction.atomic():
-                user = User.objects.select_for_update().get(
-                    email_verification_token=token_uuid
-                )
+                user = User.objects.select_for_update().get(email_verification_token=token_uuid)
 
                 if user.is_email_verified:
                     logger.info(
-                        f"Email already verified: {user.email}",
-                        extra={"user_id": user.id, "ip_address": client_ip}
+                        f"Email already verified: {user.email}", extra={"user_id": user.id, "ip_address": client_ip}
                     )
-                    return Response(
-                        {"message": "Email is already verified"},
-                        status=status.HTTP_200_OK
-                    )
+                    return Response({"message": "Email is already verified"}, status=status.HTTP_200_OK)
 
                 if not user.is_verification_token_valid():
                     logger.warning(
                         f"Expired verification token used: {user.email}",
-                        extra={"user_id": user.id, "ip_address": client_ip}
+                        extra={"user_id": user.id, "ip_address": client_ip},
                     )
-                    return Response(
-                        {"error": "Verification token has expired"},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
+                    return Response({"error": "Verification token has expired"}, status=status.HTTP_400_BAD_REQUEST)
 
                 # Mark as verified and invalidate token
                 user.is_email_verified = True
                 user.is_active = True
                 user.email_verification_token = uuid.uuid4()
-                user.save(update_fields=[
-                    "is_email_verified",
-                    "is_active",
-                    "email_verification_token"
-                ])
+                user.save(update_fields=["is_email_verified", "is_active", "email_verification_token"])
 
                 logger.info(
-                    f"Email verified successfully: {user.email}",
-                    extra={"user_id": user.id, "ip_address": client_ip}
+                    f"Email verified successfully: {user.email}", extra={"user_id": user.id, "ip_address": client_ip}
                 )
 
-                return Response(
-                    {"message": "Email verified successfully"},
-                    status=status.HTTP_200_OK
-                )
+                return Response({"message": "Email verified successfully"}, status=status.HTTP_200_OK)
 
         except User.DoesNotExist:
-            logger.warning(
-                f"Invalid verification token: {token}",
-                extra={"ip_address": client_ip}
-            )
-            return Response(
-                {"error": "Invalid verification token"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            logger.warning(f"Invalid verification token: {token}", extra={"ip_address": client_ip})
+            return Response({"error": "Invalid verification token"}, status=status.HTTP_400_BAD_REQUEST)
 
     # Private helper methods for security operations
     def _get_client_ip(self, request) -> str:
