@@ -546,24 +546,30 @@ jobs:
 
           echo "🚀 Running tests with coverage analysis..."
 
+          # Запускаем coverage с pytest
           poetry run coverage run --source=src --branch -m pytest tests/ --ds=config.settings --reuse-db -v
-          
-          echo "📋 Coverage data collected, generating reports..."
-          
-          poetry run coverage report -m || {
-            echo "⚠️ Coverage report generated with warnings"          }
 
-          
-          COVERAGE_PERCENT=$(poetry run coverage report --format=total)
+          # Проверяем что coverage собран
+          echo "📋 Coverage data collected, generating reports..."
+
+          # Генерируем отчет coverage
+          poetry run coverage report -m || {
+            echo "⚠️ Coverage report generated with warnings"
+          }
+
+          # Получаем процент coverage и проверяем порог (без bc, используем встроенные возможности)
+          COVERAGE_PERCENT=$(poetry run coverage report --format=total 2>/dev/null || echo "0")
           echo "📊 Current coverage: ${COVERAGE_PERCENT}%"
 
-          if (( $(echo "$COVERAGE_PERCENT < 70" | bc -l) )); then
+          # Проверяем порог без bc (для совместимости)
+          if [ "${COVERAGE_PERCENT}" -lt 70 ]; then
             echo "⚠️ Coverage is below 70% threshold (current: ${COVERAGE_PERCENT}%)"
-            echo "🔍 This is informational - not failing the build"            
+            echo "🔍 This is informational - not failing the build"
           else
             echo "✅ Coverage meets requirements (${COVERAGE_PERCENT}% >= 70%)"
           fi
-          
+
+          # Генерируем XML для Codecov
           poetry run coverage xml
 
           echo "✅ Coverage analysis completed successfully"
