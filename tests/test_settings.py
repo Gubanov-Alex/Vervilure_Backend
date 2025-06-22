@@ -1,19 +1,24 @@
+"""
+Django settings for testing environment.
+Optimized for maximum test speed and isolation.
+"""
+
 import os
+from datetime import timedelta  # ИСПРАВЛЕНО: правильный импорт timedelta
 from pathlib import Path
 
 # Build paths
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Environment detection for tests
-IS_TESTING = True
-IS_CI = bool(os.environ.get("GITHUB_ACTIONS") or os.environ.get("CI") or os.environ.get("ENVIRONMENT") == "ci")
+# SECURITY WARNING: Don't use this secret key in production!
+SECRET_KEY = "test-secret-key-for-testing-only"
+
+# SECURITY WARNING: Don't run with debug turned on in production!
 DEBUG = True
 
-# Security settings for tests
-SECRET_KEY = "test-secret-key-not-for-production-only-for-testing-12345"
-ALLOWED_HOSTS = ["*"]  # Allow all hosts for testing
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", "testserver"]
 
-# Application Configuration
+# Application definition
 DJANGO_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -21,24 +26,25 @@ DJANGO_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    "django.contrib.sites",
 ]
 
 THIRD_PARTY_APPS = [
     "rest_framework",
     "rest_framework_simplejwt",
-    "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
-    "drf_yasg",  # Added for API documentation
+    "allauth",
+    "allauth.account",
+    "allauth.socialaccount",
+    "allauth.socialaccount.providers.google",
 ]
 
 LOCAL_APPS = [
     "src.apps.accounts",
+    "src.apps.common",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
-# Minimal middleware for tests
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
@@ -48,12 +54,11 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "allauth.account.middleware.AccountMiddleware",
 ]
 
-# URL configuration
-ROOT_URLCONF = "config.urls"  # Use main URL config
+ROOT_URLCONF = "config.urls"
 
-# Templates for tests
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
@@ -77,6 +82,9 @@ DATABASES = {
         "NAME": ":memory:",
         "OPTIONS": {
             "timeout": 20,
+        },
+        "TEST": {
+            "NAME": ":memory:",
         },
     }
 }
@@ -130,8 +138,6 @@ REST_FRAMEWORK = {
 }
 
 # JWT settings for tests - longer lifetime for easier testing
-from datetime import timedelta
-
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(hours=1),  # Longer for tests
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
@@ -201,7 +207,7 @@ LOGGING = {
             "level": "CRITICAL",
             "propagate": False,
         },
-        "src": {
+        "django.db.backends": {
             "handlers": ["null"],
             "level": "CRITICAL",
             "propagate": False,
@@ -214,108 +220,45 @@ LOGGING = {
     },
 }
 
-# OAuth settings for tests
-GOOGLE_OAUTH_CLIENT_ID = "test-client-id"
-GOOGLE_OAUTH_SECRET = "test-secret"
-
 # CORS settings for tests
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://testserver",
-]
+CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOW_ALL_ORIGINS = True  # Allow all origins in tests
 
-# Django Admin settings
-ADMIN_URL = "admin/"
+# Django Allauth settings for tests
+ACCOUNT_AUTHENTICATION_METHOD = "email"
+ACCOUNT_EMAIL_REQUIRED = True
+ACCOUNT_USERNAME_REQUIRED = False
+ACCOUNT_EMAIL_VERIFICATION = "none"  # Disable for tests
+ACCOUNT_LOGIN_ATTEMPTS_LIMIT = None  # Disable for tests
+ACCOUNT_LOGIN_ATTEMPTS_TIMEOUT = None  # Disable for tests
 
-# Security settings for tests (relaxed)
-SECURE_SSL_REDIRECT = False
-SECURE_BROWSER_XSS_FILTER = False
-SECURE_CONTENT_TYPE_NOSNIFF = False
-X_FRAME_OPTIONS = "SAMEORIGIN"
+# Social account settings for tests
+SOCIALACCOUNT_PROVIDERS = {
+    "google": {
+        "APP": {
+            "client_id": "test_google_client_id",
+            "secret": "test_google_secret",
+            "key": "",
+        },
+        "SCOPE": [
+            "profile",
+            "email",
+        ],
+        "AUTH_PARAMS": {
+            "access_type": "online",
+        },
+        "OAUTH_PKCE_ENABLED": True,
+    }
+}
 
-# Session settings for tests
+# Test environment specific settings
+TESTING = True
+IS_TESTING = True
+
+# Security settings for tests
 SESSION_COOKIE_SECURE = False
-SESSION_COOKIE_HTTPONLY = True
-SESSION_COOKIE_SAMESITE = "Lax"
-
-# CSRF settings for tests
 CSRF_COOKIE_SECURE = False
-CSRF_COOKIE_HTTPONLY = True
-CSRF_COOKIE_SAMESITE = "Lax"
-CSRF_TRUSTED_ORIGINS = ["http://testserver", "http://localhost:3000"]
+SECURE_SSL_REDIRECT = False
 
-# File upload settings for tests
-FILE_UPLOAD_MAX_MEMORY_SIZE = 5242880  # 5MB
-DATA_UPLOAD_MAX_MEMORY_SIZE = 5242880
-
-# Test-specific environment variables
-os.environ["TESTING"] = "True"
-os.environ["THROTTLING_DISABLED"] = "True"
-
-# Swagger/OpenAPI settings for tests
-SWAGGER_SETTINGS = {
-    "SECURITY_DEFINITIONS": {"Bearer": {"type": "apiKey", "name": "Authorization", "in": "header"}},
-    "USE_SESSION_AUTH": False,
-    "JSON_EDITOR": True,
-    "SUPPORTED_SUBMIT_METHODS": ["get", "post", "put", "delete", "patch"],
-}
-
-# Additional test performance optimizations
-if IS_CI:
-    # CI-specific optimizations
-
-    # Even faster password hashing
-    PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
-
-    # Disable debug toolbar and other dev tools
-    DEBUG = False
-
-    # Minimal middleware
-    MIDDLEWARE = [
-        "django.middleware.security.SecurityMiddleware",
-        "django.contrib.sessions.middleware.SessionMiddleware",
-        "django.middleware.common.CommonMiddleware",
-        "django.contrib.auth.middleware.AuthenticationMiddleware",
-        "django.contrib.messages.middleware.MessageMiddleware",
-    ]
-
-    # Disable file logging completely
-    LOGGING["handlers"] = {"null": {"class": "logging.NullHandler"}}
-
-    print("🚀 CI-optimized test settings loaded")
-else:
-    print("🧪 Local test settings loaded")
-
-# Ensure throttling is completely disabled
-assert REST_FRAMEWORK["DEFAULT_THROTTLE_CLASSES"] == []
-assert REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"] == {}
-
-print("✅ Throttling completely disabled for tests")
-print(f"📊 Database: {DATABASES['default']['NAME']}")
-print(f"💾 Cache: {CACHES['default']['BACKEND']}")
-print(f"🔐 Password hasher: {PASSWORD_HASHERS[0]}")
-print(f"📧 Email backend: {EMAIL_BACKEND}")
-print(f"🏃 Celery eager: {CELERY_TASK_ALWAYS_EAGER}")
-
-# Verify critical test settings
-critical_settings = {
-    "SECRET_KEY": bool(SECRET_KEY),
-    "THROTTLING_DISABLED": len(REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]) == 0,
-    "FAST_PASSWORDS": "MD5" in PASSWORD_HASHERS[0],
-    "MEMORY_DB": DATABASES["default"]["NAME"] == ":memory:",
-    "DUMMY_CACHE": "dummy" in CACHES["default"]["BACKEND"].lower(),
-}
-
-print("🔍 Critical test settings verification:")
-for setting, status in critical_settings.items():
-    status_icon = "✅" if status else "❌"
-    print(f"  {status_icon} {setting}: {status}")
-
-# Fail fast if critical settings are wrong
-if not all(critical_settings.values()):
-    raise RuntimeError("Critical test settings are not properly configured!")
-
-print("🎯 All test settings verified and optimized for performance")
+# Default primary key field type
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
