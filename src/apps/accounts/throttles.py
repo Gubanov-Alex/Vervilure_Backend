@@ -2,8 +2,8 @@ import logging
 from typing import Optional
 
 from django.conf import settings
-from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from rest_framework.request import Request
+from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from rest_framework.views import APIView
 
 logger = logging.getLogger(__name__)
@@ -18,14 +18,14 @@ class BaseRobustThrottle:
 
         Returns None if throttling is disabled or rate not configured.
         """
-        if not getattr(self, 'scope', None):
+        if not getattr(self, "scope", None):
             logger.debug(f"No scope defined for {self.__class__.__name__}")
             return None
 
         try:
             # Check if REST_FRAMEWORK settings exist
-            rest_framework_settings = getattr(settings, 'REST_FRAMEWORK', {})
-            throttle_rates = rest_framework_settings.get('DEFAULT_THROTTLE_RATES', {})
+            rest_framework_settings = getattr(settings, "REST_FRAMEWORK", {})
+            throttle_rates = rest_framework_settings.get("DEFAULT_THROTTLE_RATES", {})
 
             # Return None if throttling is disabled (empty dict)
             if not throttle_rates:
@@ -68,6 +68,7 @@ class LoginRateThrottle(BaseRobustThrottle, AnonRateThrottle):
     Limits login attempts to prevent brute force attacks.
     Falls back gracefully when throttling is disabled.
     """
+
     scope = "login"
 
     def allow_request(self, request: Request, view: APIView) -> bool:
@@ -84,6 +85,7 @@ class RegistrationRateThrottle(BaseRobustThrottle, AnonRateThrottle):
     Limits registration attempts to prevent spam.
     Falls back gracefully when throttling is disabled.
     """
+
     scope = "registration"
 
     def allow_request(self, request: Request, view: APIView) -> bool:
@@ -100,6 +102,7 @@ class PasswordChangeRateThrottle(BaseRobustThrottle, UserRateThrottle):
     Limits password changes to prevent abuse.
     Falls back gracefully when throttling is disabled.
     """
+
     scope = "password_change"
 
     def allow_request(self, request: Request, view: APIView) -> bool:
@@ -116,11 +119,12 @@ class PasswordResetRateThrottle(BaseRobustThrottle, AnonRateThrottle):
     Limits password reset requests to prevent abuse.
     Falls back gracefully when throttling is disabled.
     """
+
     scope = "password_reset"
 
     def allow_request(self, request: Request, view: APIView) -> bool:
         """Check if password reset request should be allowed."""
-        # Log throttle attempt for debugging  
+        # Log throttle attempt for debugging
         logger.debug(f"Password reset throttle check for IP: {self.get_ident(request)}")
         return super().allow_request(request, view)
 
@@ -134,8 +138,8 @@ def is_throttling_enabled() -> bool:
         bool: True if throttling is configured, False otherwise
     """
     try:
-        rest_framework_settings = getattr(settings, 'REST_FRAMEWORK', {})
-        throttle_rates = rest_framework_settings.get('DEFAULT_THROTTLE_RATES', {})
+        rest_framework_settings = getattr(settings, "REST_FRAMEWORK", {})
+        throttle_rates = rest_framework_settings.get("DEFAULT_THROTTLE_RATES", {})
         return bool(throttle_rates)
     except Exception:
         return False
@@ -152,8 +156,8 @@ def get_throttle_rate(scope: str) -> Optional[str]:
         str or None: The throttle rate string or None if not configured
     """
     try:
-        rest_framework_settings = getattr(settings, 'REST_FRAMEWORK', {})
-        throttle_rates = rest_framework_settings.get('DEFAULT_THROTTLE_RATES', {})
+        rest_framework_settings = getattr(settings, "REST_FRAMEWORK", {})
+        throttle_rates = rest_framework_settings.get("DEFAULT_THROTTLE_RATES", {})
         return throttle_rates.get(scope)
     except Exception:
         return None

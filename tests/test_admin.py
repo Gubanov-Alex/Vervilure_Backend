@@ -266,8 +266,8 @@ class TestAdminIntegration:
 import pytest
 from django.contrib.admin.sites import AdminSite
 from django.contrib.auth import get_user_model
-from django.test import RequestFactory
 from django.core.exceptions import ImproperlyConfigured
+from django.test import RequestFactory
 
 User = get_user_model()
 
@@ -277,6 +277,7 @@ def get_admin_classes():
     try:
         from src.apps.accounts.admin import UserAddressAdmin, UserAdmin
         from src.apps.accounts.models import UserAddress
+
         return UserAdmin, UserAddressAdmin, UserAddress
     except ImportError as e:
         pytest.skip(f"Admin modules not available: {e}", allow_module_level=True)
@@ -316,7 +317,7 @@ class TestUserAdmin:
         core_fields = ["email", "is_active", "is_staff", "date_joined"]
 
         # Check if list_display exists and is not empty
-        assert hasattr(self.admin, 'list_display'), "Admin should have list_display attribute"
+        assert hasattr(self.admin, "list_display"), "Admin should have list_display attribute"
         assert len(self.admin.list_display) > 0, "list_display should not be empty"
 
         for field in core_fields:
@@ -327,7 +328,7 @@ class TestUserAdmin:
         # Test core filters that should exist
         core_filters = ["is_active", "is_staff", "date_joined"]
 
-        assert hasattr(self.admin, 'list_filter'), "Admin should have list_filter attribute"
+        assert hasattr(self.admin, "list_filter"), "Admin should have list_filter attribute"
 
         for filter_field in core_filters:
             assert filter_field in self.admin.list_filter, f"Core filter '{filter_field}' missing from list_filter"
@@ -335,7 +336,7 @@ class TestUserAdmin:
     def test_admin_search_fields_configuration(self):
         """Test admin search fields configuration."""
         # Test that search fields exist
-        assert hasattr(self.admin, 'search_fields'), "Admin should have search_fields attribute"
+        assert hasattr(self.admin, "search_fields"), "Admin should have search_fields attribute"
         assert len(self.admin.search_fields) > 0, "Search fields should be configured"
 
         # Email should be searchable
@@ -399,11 +400,7 @@ class TestUserAdmin:
     def test_admin_readonly_fields_for_staff(self):
         """Test readonly fields configuration for staff users."""
         staff_user = User.objects.create_user(
-            email="staff@example.com",
-            password="staffpass123",
-            is_staff=True,
-            first_name="Staff",
-            last_name="User"
+            email="staff@example.com", password="staffpass123", is_staff=True, first_name="Staff", last_name="User"
         )
 
         request = self.factory.get("/admin/")
@@ -441,10 +438,7 @@ class TestUserAddressAdmin:
         self.factory = request_factory
 
         self.user = django_user_model.objects.create_user(
-            email="address@example.com",
-            password="testpass123",
-            first_name="Address",
-            last_name="User"
+            email="address@example.com", password="testpass123", first_name="Address", last_name="User"
         )
 
         # Create address with minimal required fields
@@ -467,10 +461,7 @@ class TestUserAddressAdmin:
     def test_address_admin_permissions(self, django_user_model):
         """Test address admin basic permissions."""
         superuser = django_user_model.objects.create_superuser(
-            email="admin@example.com",
-            password="adminpass123",
-            first_name="Admin",
-            last_name="User"
+            email="admin@example.com", password="adminpass123", first_name="Admin", last_name="User"
         )
 
         request = self.factory.get("/admin/")
@@ -482,10 +473,7 @@ class TestUserAddressAdmin:
     def test_address_admin_queryset(self, django_user_model):
         """Test address admin queryset."""
         superuser = django_user_model.objects.create_superuser(
-            email="admin@example.com",
-            password="adminpass123",
-            first_name="Admin",
-            last_name="User"
+            email="admin@example.com", password="adminpass123", first_name="Admin", last_name="User"
         )
 
         request = self.factory.get("/admin/")
@@ -498,10 +486,7 @@ class TestUserAddressAdmin:
     def test_address_admin_list_select_related(self, django_user_model):
         """Test address admin uses select_related for performance."""
         superuser = django_user_model.objects.create_superuser(
-            email="admin@example.com",
-            password="adminpass123",
-            first_name="Admin",
-            last_name="User"
+            email="admin@example.com", password="adminpass123", first_name="Admin", last_name="User"
         )
 
         request = self.factory.get("/admin/")
@@ -545,10 +530,7 @@ class TestAdminIntegration:
     def test_admin_basic_functionality(self, django_user_model):
         """Test basic admin functionality."""
         superuser = django_user_model.objects.create_superuser(
-            email="integration@example.com",
-            password="adminpass123",
-            first_name="Integration",
-            last_name="Admin"
+            email="integration@example.com", password="adminpass123", first_name="Integration", last_name="Admin"
         )
 
         # Should be able to create superuser for admin access
@@ -572,10 +554,7 @@ class TestAdminIntegration:
         from django.urls import reverse
 
         user = django_user_model.objects.create_user(
-            email="changeview@example.com",
-            password="testpass123",
-            first_name="Change",
-            last_name="View"
+            email="changeview@example.com", password="testpass123", first_name="Change", last_name="View"
         )
 
         try:
@@ -590,20 +569,12 @@ class TestAdminIntegration:
 
         # Create non-staff user
         regular_user = django_user_model.objects.create_user(
-            email="regular@example.com",
-            password="testpass123",
-            first_name="Regular",
-            last_name="User",
-            is_staff=False
+            email="regular@example.com", password="testpass123", first_name="Regular", last_name="User", is_staff=False
         )
 
         # Create staff user
         staff_user = django_user_model.objects.create_user(
-            email="staff@example.com",
-            password="testpass123",
-            first_name="Staff",
-            last_name="User",
-            is_staff=True
+            email="staff@example.com", password="testpass123", first_name="Staff", last_name="User", is_staff=True
         )
 
         # Test admin access restrictions
@@ -637,10 +608,7 @@ class TestAdminPerformance:
         self.users = []
         for i in range(10):
             user = django_user_model.objects.create_user(
-                email=f"perf_user_{i}@example.com",
-                password="testpass123",
-                first_name=f"Perf{i}",
-                last_name="User"
+                email=f"perf_user_{i}@example.com", password="testpass123", first_name=f"Perf{i}", last_name="User"
             )
             self.users.append(user)
 
@@ -652,10 +620,7 @@ class TestAdminPerformance:
         user_admin = admin.site._registry[User]
 
         superuser = django_user_model.objects.create_superuser(
-            email="perf_admin@example.com",
-            password="adminpass123",
-            first_name="Perf",
-            last_name="Admin"
+            email="perf_admin@example.com", password="adminpass123", first_name="Perf", last_name="Admin"
         )
 
         request_factory = RequestFactory()
@@ -704,25 +669,15 @@ class TestAdminSecurity:
 
         # Create users with different permission levels
         superuser = django_user_model.objects.create_superuser(
-            email="super@example.com",
-            password="testpass123",
-            first_name="Super",
-            last_name="User"
+            email="super@example.com", password="testpass123", first_name="Super", last_name="User"
         )
 
         staff_user = django_user_model.objects.create_user(
-            email="staff@example.com",
-            password="testpass123",
-            first_name="Staff",
-            last_name="User",
-            is_staff=True
+            email="staff@example.com", password="testpass123", first_name="Staff", last_name="User", is_staff=True
         )
 
         regular_user = django_user_model.objects.create_user(
-            email="regular@example.com",
-            password="testpass123",
-            first_name="Regular",
-            last_name="User"
+            email="regular@example.com", password="testpass123", first_name="Regular", last_name="User"
         )
 
         user_admin = admin.site._registry[User]
@@ -758,7 +713,7 @@ class TestAdminSecurity:
             password="testpass123",
             first_name="Staff",
             last_name="Security",
-            is_staff=True
+            is_staff=True,
         )
 
         request = request_factory.get("/admin/")
@@ -767,7 +722,7 @@ class TestAdminSecurity:
         readonly_fields = user_admin.get_readonly_fields(request)
 
         # Critical security fields should be readonly for staff
-        security_fields = ['is_superuser', 'is_staff', 'user_permissions', 'groups']
+        security_fields = ["is_superuser", "is_staff", "user_permissions", "groups"]
 
         for field in security_fields:
             # Check if field exists in model and should be readonly

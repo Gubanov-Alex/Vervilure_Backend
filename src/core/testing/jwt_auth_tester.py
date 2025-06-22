@@ -1,6 +1,7 @@
 import json
-from typing import Dict
 import logging
+from typing import Dict
+
 from django.test import Client
 
 logger = logging.getLogger(__name__)
@@ -84,7 +85,7 @@ class JWTAuthTester:
                 success=False,
                 message=f"Critical error in JWT flow test: {str(e)}",
                 data={"exception_type": type(e).__name__},
-                error=str(e)
+                error=str(e),
             )
 
             # Attempt cleanup even on critical error
@@ -140,8 +141,9 @@ class JWTAuthTester:
                                     "refresh_token": refresh_token,
                                     "status_code": response.status_code,
                                     "endpoint": endpoint,
-                                    "user_id": response_data.get("user", {}).get(
-                                        "id") if "user" in response_data else None,
+                                    "user_id": (
+                                        response_data.get("user", {}).get("id") if "user" in response_data else None
+                                    ),
                                 },
                             )
                         else:
@@ -178,7 +180,7 @@ class JWTAuthTester:
                 success=False,
                 message=f"JWT token generation error: {str(e)}",
                 data={"exception_type": type(e).__name__},
-                error=str(e)
+                error=str(e),
             )
 
     def _test_token_refresh_api(self, refresh_token: str) -> TestResult:
@@ -265,7 +267,7 @@ class JWTAuthTester:
                 success=False,
                 message=f"Token refresh test error: {str(e)}",
                 data={"exception_type": type(e).__name__},
-                error=str(e)
+                error=str(e),
             )
 
     def _test_token_blacklisting(self, refresh_token: str) -> TestResult:
@@ -286,6 +288,7 @@ class JWTAuthTester:
                     )
 
                 from django.contrib.auth import get_user_model
+
                 User = get_user_model()
 
                 try:
@@ -356,7 +359,7 @@ class JWTAuthTester:
                                 data={
                                     "url": logout_url,
                                     "status_code": response.status_code,
-                                    "refresh_still_works": True
+                                    "refresh_still_works": True,
                                 },
                                 error="Token blacklisting mechanism not working",
                             )
@@ -423,7 +426,7 @@ class JWTAuthTester:
 
             # Try to set email verification if field exists
             try:
-                if hasattr(user, 'is_email_verified'):
+                if hasattr(user, "is_email_verified"):
                     user.is_email_verified = True
                     user.save()
             except Exception as e:
@@ -448,7 +451,7 @@ class JWTAuthTester:
                 success=False,
                 message=f"Failed to create test user: {str(e)}",
                 data={"exception_type": type(e).__name__},
-                error=str(e)
+                error=str(e),
             )
 
     def _cleanup_test_user(self, email: str) -> TestResult:
@@ -479,7 +482,7 @@ class JWTAuthTester:
                 success=False,
                 message=f"Failed to cleanup test user: {str(e)}",
                 data={"exception_type": type(e).__name__},
-                error=str(e)
+                error=str(e),
             )
 
     def _test_protected_endpoint_access(self, access_token: str) -> TestResult:
@@ -558,7 +561,7 @@ class JWTAuthTester:
                 success=False,
                 message=f"Protected endpoint access error: {str(e)}",
                 data={"exception_type": type(e).__name__},
-                error=str(e)
+                error=str(e),
             )
 
     def _test_user_authentication_endpoints(self, email: str) -> TestResult:
@@ -572,10 +575,10 @@ class JWTAuthTester:
                         "email": f"test.register.{email}",
                         "password": self.test_password,
                         "first_name": "Test",
-                        "last_name": "Register"
+                        "last_name": "Register",
                     },
                     "expected_status": [201, 400],  # 400 if user already exists
-                    "name": "registration"
+                    "name": "registration",
                 },
             ]
 
@@ -596,29 +599,25 @@ class JWTAuthTester:
                         results[endpoint_test["name"]] = {
                             "success": True,
                             "status_code": response.status_code,
-                            "url": endpoint_test["url"]
+                            "url": endpoint_test["url"],
                         }
                     elif response.status_code == 404:
                         results[endpoint_test["name"]] = {
                             "success": False,
                             "status_code": 404,
                             "url": endpoint_test["url"],
-                            "error": "Endpoint not found"
+                            "error": "Endpoint not found",
                         }
                     else:
                         results[endpoint_test["name"]] = {
                             "success": False,
                             "status_code": response.status_code,
                             "url": endpoint_test["url"],
-                            "error": f"Unexpected status code"
+                            "error": f"Unexpected status code",
                         }
 
                 except Exception as e:
-                    results[endpoint_test["name"]] = {
-                        "success": False,
-                        "error": str(e),
-                        "url": endpoint_test["url"]
-                    }
+                    results[endpoint_test["name"]] = {"success": False, "error": str(e), "url": endpoint_test["url"]}
 
             successful_tests = sum(1 for result in results.values() if result.get("success", False))
             total_tests = len(results)
@@ -651,15 +650,15 @@ class JWTAuthTester:
             jwt_issues = []
 
             # Check if JWT settings exist
-            if hasattr(settings, 'SIMPLE_JWT'):
+            if hasattr(settings, "SIMPLE_JWT"):
                 jwt_settings = settings.SIMPLE_JWT
 
                 # Check important JWT settings
                 important_settings = [
-                    'ACCESS_TOKEN_LIFETIME',
-                    'REFRESH_TOKEN_LIFETIME',
-                    'ALGORITHM',
-                    'SIGNING_KEY',
+                    "ACCESS_TOKEN_LIFETIME",
+                    "REFRESH_TOKEN_LIFETIME",
+                    "ALGORITHM",
+                    "SIGNING_KEY",
                 ]
 
                 for setting_name in important_settings:
@@ -669,7 +668,7 @@ class JWTAuthTester:
                         jwt_issues.append(f"Missing {setting_name}")
 
                 # Check for token blacklist
-                if 'TOKEN_BLACKLIST' in str(settings.INSTALLED_APPS):
+                if "TOKEN_BLACKLIST" in str(settings.INSTALLED_APPS):
                     jwt_settings["blacklist_enabled"] = True
                 else:
                     jwt_issues.append("Token blacklist not in INSTALLED_APPS")
@@ -681,10 +680,10 @@ class JWTAuthTester:
                 success=len(jwt_issues) == 0,
                 message=f"JWT settings validation: {len(jwt_issues)} issues found",
                 data={
-                    "jwt_configured": hasattr(settings, 'SIMPLE_JWT'),
+                    "jwt_configured": hasattr(settings, "SIMPLE_JWT"),
                     "settings_found": len(jwt_settings),
                     "issues": jwt_issues,
-                    "jwt_settings_summary": {k: str(v) for k, v in jwt_settings.items() if not k.startswith('SIGNING')},
+                    "jwt_settings_summary": {k: str(v) for k, v in jwt_settings.items() if not k.startswith("SIGNING")},
                 },
                 error="; ".join(jwt_issues) if jwt_issues else None,
             )
@@ -705,7 +704,7 @@ def get_logger():
 
     if not logger.handlers:
         handler = logging.StreamHandler()
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
         handler.setFormatter(formatter)
         logger.addHandler(handler)
         logger.setLevel(logging.INFO)

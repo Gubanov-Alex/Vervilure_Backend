@@ -1,10 +1,12 @@
+"""Tests for OAuth validators"""
+
 import os
 import sys
 import warnings
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
+import timedelta
 from django.conf import settings
 from django.test.utils import setup_test_environment, teardown_test_environment
 
@@ -12,6 +14,7 @@ from django.test.utils import setup_test_environment, teardown_test_environment
 project_root = Path(__file__).parent.parent.absolute()
 sys.path.insert(0, str(project_root))
 
+# КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Убираем принудительную настройку базы данных
 # Set Django settings before any Django imports
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "tests.test_settings")
 os.environ["IS_TESTING"] = "True"
@@ -26,8 +29,8 @@ warnings.filterwarnings("ignore", category=UserWarning)
 import django
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
-from django.test.client import Client
 from django.test import override_settings
+from django.test.client import Client
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -50,11 +53,12 @@ def django_test_environment():
 def django_db_setup():
     """
     Setup test database for the session.
-    Using SQLite in-memory so no actual setup needed.
+    ИСПРАВЛЕНИЕ: Убираем принудительную настройку :memory:
+    Позволяем Django использовать настройки из test_settings.py
     """
-    # Since we're using :memory: SQLite, no setup required
-    settings.DATABASES["default"]["NAME"] = ":memory:"
-    yield
+    # УДАЛЕНО: settings.DATABASES["default"]["NAME"] = ":memory:"
+    # Позволяем Django использовать настройки из test_settings.py
+    pass
 
 
 @pytest.fixture(autouse=True)
@@ -112,364 +116,37 @@ def admin_client(api_client, admin_user):
 
 # User fixtures
 @pytest.fixture
-def user_factory():
-    """Factory for creating users with custom attributes."""
-    created_users = []
-
-    def _create_user(**kwargs):
-        defaults = {
-            "email": f"user{len(created_users)}@example.com",
-            "password": "TestPass123!",
-            "first_name": "Test",
-            "last_name": "User",
-            "is_email_verified": True,
-            "is_active": True,
-        }
-        defaults.update(kwargs)
-
-        user = User.objects.create_user(**defaults)
-        created_users.append(user)
-        return user
-
-    yield _create_user
-
-    # Cleanup
-    User.objects.filter(id__in=[u.id for u in created_users]).delete()
-
-
-@pytest.fixture
-def regular_user(user_factory):
-    """Create a regular test user."""
-    return user_factory(
-        email="regular@example.com",
-        first_name="Regular",
-        last_name="User"
-    )
-
-
-@pytest.fixture
-def superuser(user_factory):
-    """Create a superuser for admin tests."""
-    return user_factory(
-        email="superuser@example.com",
-        first_name="Super",
+def regular_user():
+    """Create a regular user for testing."""
+    user = User.objects.create_user(
+        email="test@example.com",
+        password="testpass123",
+        first_name="Test",
         last_name="User",
-        is_staff=True,
-        is_superuser=True
+        is_active=True,
+        email_verified=True,
     )
+    return user
 
 
 @pytest.fixture
-def admin_user(user_factory):
-    """Create an admin test user."""
-    return user_factory(
+def admin_user():
+    """Create an admin user for testing."""
+    user = User.objects.create_user(
         email="admin@example.com",
+        password="adminpass123",
         first_name="Admin",
         last_name="User",
+        is_active=True,
         is_staff=True,
-        is_superuser=True
+        is_superuser=True,
+        email_verified=True,
     )
+    return user
 
 
-@pytest.fixture
-def unverified_user(user_factory):
-    """Create an unverified test user."""
-    return user_factory(
-        email="unverified@example.com",
-        first_name="Unverified",
-        last_name="User",
-        is_email_verified=False,
-        is_active=False
-    )
-
-
-@pytest.fixture
-def request_factory():
-    """Django request factory for admin tests."""
-    from django.test import RequestFactory
-    return RequestFactory()
-
-
-# Authentication fixtures
-@pytest.fixture
-def user_tokens(regular_user):
-    """Generate JWT tokens for a user."""
-    refresh = RefreshToken.for_user(regular_user)
-    return {
-        "refresh": str(refresh),
-        "access": str(refresh.access_token),
-        "user": regular_user
-    }
-
-
-@pytest.fixture
-def admin_tokens(admin_user):
-    """Generate JWT tokens for admin user."""
-    refresh = RefreshToken.for_user(admin_user)
-    return {
-        "refresh": str(refresh),
-        "access": str(refresh.access_token),
-        "user": admin_user
-    }
-
-
-# Mock fixtures for external services
-@pytest.fixture
-def mock_google_oauth():
-    """Mock Google OAuth validation."""
-    with patch("src.apps.accounts.serializers.GoogleOAuthValidator.validate_token") as mock:
-        mock.return_value = (
-            True,
-            {
-                "email": "google@gmail.com",
-                "google_id": "123456789",
-                "first_name": "Google",
-                "last_name": "User",
-                "email_verified": True,
-            },
-            None,
-        )
-        yield mock
-
-
-@pytest.fixture
-def mock_celery_tasks():
-    """Mock Celery tasks for testing."""
-    with patch("src.apps.accounts.tasks.send_verification_email") as mock_verification, \
-            patch("src.apps.accounts.tasks.send_password_reset_email") as mock_reset:
-        mock_verification.delay.return_value = None
-        mock_reset.delay.return_value = None
-        yield {
-            "verification": mock_verification,
-            "reset": mock_reset
-        }
-
-
-# Settings override fixtures
-@pytest.fixture
-def throttling_disabled():
-    """Disable throttling for specific tests."""
-    with override_settings(
-            REST_FRAMEWORK={
-                **settings.REST_FRAMEWORK,
-                "DEFAULT_THROTTLE_CLASSES": [],
-                "DEFAULT_THROTTLE_RATES": {},
-            }
-    ):
-        yield
-
-
-@pytest.fixture
-def throttling_enabled():
-    """Enable throttling for specific tests."""
-    with override_settings(
-            REST_FRAMEWORK={
-                **settings.REST_FRAMEWORK,
-                "DEFAULT_THROTTLE_CLASSES": [
-                    "rest_framework.throttling.AnonRateThrottle",
-                    "rest_framework.throttling.UserRateThrottle",
-                ],
-                "DEFAULT_THROTTLE_RATES": {
-                    "anon": "100/hour",
-                    "user": "1000/hour",
-                    "login": "5/min",
-                    "registration": "3/min",
-                    "password_change": "3/hour",
-                },
-            }
-    ):
-        yield
-
-
-# Performance and debugging fixtures
-@pytest.fixture
-def performance_monitor():
-    """Monitor test performance."""
-    import time
-    start_time = time.time()
-    yield
-    end_time = time.time()
-    duration = end_time - start_time
-    if duration > 5.0:  # Warn if test takes more than 5 seconds
-        pytest.warns(f"Test took {duration:.2f} seconds - consider optimization")
-
-
-@pytest.fixture
-def capture_logs():
-    """Capture logs during test execution."""
-    import logging
-    from io import StringIO
-
-    log_capture = StringIO()
-    handler = logging.StreamHandler(log_capture)
-    handler.setLevel(logging.DEBUG)
-
-    # Add handler to relevant loggers
-    loggers = [
-        logging.getLogger("src.apps.accounts"),
-        logging.getLogger("django"),
-        logging.getLogger("rest_framework"),
-    ]
-
-    for logger in loggers:
-        logger.addHandler(handler)
-        logger.setLevel(logging.DEBUG)
-
-    yield log_capture
-
-    # Cleanup
-    for logger in loggers:
-        logger.removeHandler(handler)
-
-
-# Test data fixtures
-@pytest.fixture
-def valid_user_data():
-    """Valid user registration data."""
-    return {
-        "email": "newuser@example.com",
-        "password": "ValidPass123!",
-        "password_confirm": "ValidPass123!",
-        "first_name": "New",
-        "last_name": "User",
-        "marketing_consent": True,
-    }
-
-
-@pytest.fixture
-def valid_login_data(regular_user):
-    """Valid login data."""
-    return {
-        "email": regular_user.email,
-        "password": "TestPass123!"
-    }
-
-
-@pytest.fixture
-def valid_address_data():
-    """Valid address data."""
-    return {
-        "address_type": "shipping",
-        "first_name": "Test",
-        "last_name": "User",
-        "address_line1": "123 Test St",
-        "city": "Test City",
-        "state": "TS",
-        "postal_code": "12345",
-        "country": "US",
-    }
-
-
-# URL helper fixtures
-@pytest.fixture
-def url_finder():
-    """Helper to find available URLs for testing."""
-    from django.urls import reverse, NoReverseMatch
-
-    def find_url(patterns, *args, **kwargs):
-        """Try multiple URL patterns and return the first that works."""
-        for pattern in patterns:
-            try:
-                if pattern.startswith("/"):
-                    return pattern  # Direct URL
-                else:
-                    return reverse(pattern, args=args, kwargs=kwargs)
-            except (NoReverseMatch, Exception):
-                continue
-        return None
-
-    return find_url
-
-
-# Environment fixtures
-@pytest.fixture
-def ci_environment():
-    """Simulate CI environment."""
-    with patch.dict(os.environ, {"CI": "true", "GITHUB_ACTIONS": "true"}):
-        yield
-
-
-@pytest.fixture
-def local_environment():
-    """Simulate local development environment."""
-    with patch.dict(os.environ, {"CI": "", "GITHUB_ACTIONS": ""}, clear=False):
-        yield
-
-
-# Test utilities
-@pytest.fixture
-def assert_response_codes():
-    """Utility for asserting response codes."""
-
-    def _assert_codes(response, expected_codes, message=""):
-        """Assert that response status code is in expected range."""
-        assert response.status_code in expected_codes, (
-            f"{message}Expected status codes {expected_codes}, "
-            f"got {response.status_code}. "
-            f"Response data: {getattr(response, 'data', 'No data')}"
-        )
-
-    return _assert_codes
-
-
-# Cleanup fixtures
-@pytest.fixture(autouse=True)
-def cleanup_test_files():
-    """Clean up any test files created during tests."""
-    yield
-    # Add cleanup logic here if needed
-    pass
-
-
-# Pytest configuration
-def pytest_configure(config):
-    """Configure pytest with custom settings."""
-    # Disable migrations for faster tests
-    settings.MIGRATION_MODULES = {
-        app: None for app in settings.INSTALLED_APPS
-        if app.startswith("src.apps.")
-    }
-
-    # Set test runner optimizations
-    settings.PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
-
-    print("🧪 Pytest configured with optimizations")
-
-
-def pytest_runtest_setup(item):
-    """Run before each test."""
-    # Clear any cached data
-    try:
-        cache.clear()
-    except Exception:
-        pass
-
-
-def pytest_runtest_teardown(item):
-    """Run after each test."""
-    # Additional cleanup if needed
-    pass
-
-
-def pytest_collection_modifyitems(config, items):
-    """Modify test collection."""
-    # Add markers to tests based on their location or names
-    for item in items:
-        # Mark API tests
-        if "api" in item.nodeid.lower() or "test_views" in item.nodeid:
-            item.add_marker(pytest.mark.api)
-
-        # Mark auth tests
-        if "auth" in item.nodeid.lower():
-            item.add_marker(pytest.mark.auth)
-
-        # Mark slow tests
-        if "test_performance" in item.name or "slow" in item.name:
-            item.add_marker(pytest.mark.slow)
-
-
-def get_celery_setting(setting_name: str, default_value=None):
-    """Safely get Celery setting with fallback."""
+def get_celery_setting(setting_name: str, default_value: str = "Not configured") -> str:
+    """Safely get Celery settings without triggering errors."""
     try:
         return getattr(settings, setting_name, default_value)
     except AttributeError:
@@ -480,22 +157,313 @@ def get_celery_setting(setting_name: str, default_value=None):
 def test_session_info():
     """Print test session information with safe settings access."""
     print(f"\n🚀 Starting test session")
-    print(f"📍 Django settings: {getattr(settings, 'SETTINGS_MODULE', 'Not set')}")
+    print(f"📍 Django settings: {getattr(settings, 'SETTINGS_MODULE', 'tests.test_settings')}")
     print(f"💾 Database: {settings.DATABASES['default']['NAME']}")
 
     # Safe access to REST_FRAMEWORK settings
-    rest_framework = getattr(settings, 'REST_FRAMEWORK', {})
-    throttle_rates = rest_framework.get('DEFAULT_THROTTLE_RATES', {})
+    rest_framework = getattr(settings, "REST_FRAMEWORK", {})
+    throttle_rates = rest_framework.get("DEFAULT_THROTTLE_RATES", {})
     print(f"🚫 Throttling: {'Disabled' if not throttle_rates else 'Enabled'}")
 
     # Safe access to password hashers
-    password_hashers = getattr(settings, 'PASSWORD_HASHERS', [])
-    has_md5 = any('MD5' in hasher for hasher in password_hashers) if password_hashers else False
+    password_hashers = getattr(settings, "PASSWORD_HASHERS", [])
+    has_md5 = any("MD5" in hasher for hasher in password_hashers) if password_hashers else False
     print(f"⚡ Fast passwords: {has_md5}")
 
-    celery_eager = get_celery_setting('CELERY_TASK_ALWAYS_EAGER', 'Not configured')
+    celery_eager = get_celery_setting("CELERY_TASK_ALWAYS_EAGER", "Not configured")
     print(f"🏃 Celery eager: {celery_eager}")
 
     yield
 
     print(f"\n✅ Test session completed")
+
+
+# OAuth и специфичные для авторизации фикстуры
+@pytest.fixture
+def google_oauth_validator():
+    """Google OAuth validator for testing."""
+    from src.apps.accounts.utils.oauth_validators import GoogleOAuthValidator
+
+    return GoogleOAuthValidator("test_client_id")
+
+
+# Автоматически добавляем маркер для тестов аутентификации
+def pytest_collection_modifyitems(config, items):
+    """Automatically add auth marker to OAuth and auth related tests."""
+    for item in items:
+        if "oauth" in item.nodeid.lower() or "auth" in item.nodeid.lower():
+            item.add_marker(pytest.mark.auth)
+
+
+# =============================================================================
+# 2. ИСПРАВЛЕНИЕ test_settings.py (tests/test_settings.py)
+# =============================================================================
+
+"""
+Django settings for testing environment.
+Optimized for maximum test speed and isolation.
+"""
+
+import os
+import tempfile
+from pathlib import Path
+
+# Build paths
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+# SECURITY WARNING: Don't use this secret key in production!
+SECRET_KEY = "test-secret-key-for-testing-only"
+
+# SECURITY WARNING: Don't run with debug turned on in production!
+DEBUG = True
+
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", "testserver"]
+
+# Application definition
+DJANGO_APPS = [
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
+]
+
+THIRD_PARTY_APPS = [
+    "rest_framework",
+    "rest_framework_simplejwt",
+    "corsheaders",
+    "allauth",
+    "allauth.account",
+    "allauth.socialaccount",
+    "allauth.socialaccount.providers.google",
+]
+
+LOCAL_APPS = [
+    "src.apps.accounts",
+    "src.apps.common",
+]
+
+INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
+
+MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",
+    "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "allauth.account.middleware.AccountMiddleware",
+]
+
+ROOT_URLCONF = "config.urls"
+
+TEMPLATES = [
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [BASE_DIR / "templates"],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.debug",
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
+            ],
+        },
+    },
+]
+
+# КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: База данных для тестов - SQLite в памяти
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": ":memory:",
+        "OPTIONS": {
+            "timeout": 20,
+        },
+        "TEST": {
+            "NAME": ":memory:",
+        },
+    }
+}
+
+
+# Disable migrations for faster test execution
+class DisableMigrations:
+    def __contains__(self, item):
+        return True
+
+    def __getitem__(self, item):
+        return None
+
+
+MIGRATION_MODULES = DisableMigrations()
+
+# Ultra-fast password hashing for tests
+PASSWORD_HASHERS = [
+    "django.contrib.auth.hashers.MD5PasswordHasher",
+]
+
+# Cache settings for tests - use dummy cache to avoid Redis dependency
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.dummy.DummyCache",
+    }
+}
+
+# REST Framework settings - THROTTLING COMPLETELY DISABLED
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.SessionAuthentication",
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
+    "DEFAULT_RENDERER_CLASSES": [
+        "rest_framework.renderers.JSONRenderer",
+    ],
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": 20,
+    # CRITICAL: Completely disable throttling in tests
+    "DEFAULT_THROTTLE_CLASSES": [],
+    "DEFAULT_THROTTLE_RATES": {},
+    # Test-specific settings
+    "TEST_REQUEST_DEFAULT_FORMAT": "json",
+    "TEST_REQUEST_RENDERER_CLASSES": [
+        "rest_framework.renderers.JSONRenderer",
+    ],
+}
+
+# JWT settings for tests - shorter expiration times
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=5),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "UPDATE_LAST_LOGIN": False,
+    "ALGORITHM": "HS256",
+    "SIGNING_KEY": SECRET_KEY,
+    "VERIFYING_KEY": None,
+    "AUDIENCE": None,
+    "ISSUER": None,
+    "JWK_URL": None,
+    "LEEWAY": 0,
+    "AUTH_HEADER_TYPES": ("Bearer",),
+    "AUTH_HEADER_NAME": "HTTP_AUTHORIZATION",
+    "USER_ID_FIELD": "id",
+    "USER_ID_CLAIM": "user_id",
+    "USER_AUTHENTICATION_RULE": "rest_framework_simplejwt.authentication.default_user_authentication_rule",
+    "AUTH_TOKEN_CLASSES": ("rest_framework_simplejwt.tokens.AccessToken",),
+    "TOKEN_TYPE_CLAIM": "token_type",
+    "TOKEN_USER_CLASS": "rest_framework_simplejwt.models.TokenUser",
+    "JTI_CLAIM": "jti",
+    "SLIDING_TOKEN_REFRESH_EXP_CLAIM": "refresh_exp",
+    "SLIDING_TOKEN_LIFETIME": timedelta(minutes=5),
+    "SLIDING_TOKEN_REFRESH_LIFETIME": timedelta(days=1),
+}
+
+# Custom user model
+AUTH_USER_MODEL = "accounts.User"
+
+# Internationalization
+LANGUAGE_CODE = "en-us"
+TIME_ZONE = "UTC"
+USE_I18N = True
+USE_TZ = True
+
+# Static files (CSS, JavaScript, Images)
+STATIC_URL = "/static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# Media files
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
+
+# Default primary key field type
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Logging configuration for tests - minimal logging
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "null": {
+            "class": "logging.NullHandler",
+        },
+    },
+    "root": {
+        "handlers": ["null"],
+    },
+    "loggers": {
+        "django": {
+            "handlers": ["null"],
+            "propagate": False,
+        },
+        "django.db.backends": {
+            "handlers": ["null"],
+            "propagate": False,
+        },
+    },
+}
+
+# Email backend for tests - use console backend
+EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+
+# CORS settings for tests
+CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = True
+
+# Django Allauth settings for tests
+AUTHENTICATION_BACKENDS = [
+    "django.contrib.auth.backends.ModelBackend",
+    "allauth.account.auth_backends.AuthenticationBackend",
+]
+
+SITE_ID = 1
+
+ACCOUNT_AUTHENTICATION_METHOD = "email"
+ACCOUNT_EMAIL_REQUIRED = True
+ACCOUNT_USERNAME_REQUIRED = False
+ACCOUNT_EMAIL_VERIFICATION = "none"  # Disable for tests
+ACCOUNT_LOGIN_ATTEMPTS_LIMIT = None  # Disable for tests
+ACCOUNT_LOGIN_ATTEMPTS_TIMEOUT = None  # Disable for tests
+
+# Social account settings for tests
+SOCIALACCOUNT_PROVIDERS = {
+    "google": {
+        "APP": {
+            "client_id": "test_google_client_id",
+            "secret": "test_google_secret",
+            "key": "",
+        },
+        "SCOPE": [
+            "profile",
+            "email",
+        ],
+        "AUTH_PARAMS": {
+            "access_type": "online",
+        },
+        "OAUTH_PKCE_ENABLED": True,
+    }
+}
+
+# Test environment specific settings
+TESTING = True
+IS_TESTING = True
+
+# Celery settings for tests - always eager
+CELERY_TASK_ALWAYS_EAGER = True
+CELERY_TASK_EAGER_PROPAGATES = True
+
+# Security settings for tests
+SESSION_COOKIE_SECURE = False
+CSRF_COOKIE_SECURE = False
+SECURE_SSL_REDIRECT = False
+
+# MIGRATION_MODULES = DisableMigrations()
+
+from datetime import timedelta

@@ -1,5 +1,6 @@
 import logging
-from datetime import datetime, timezone as dt_timezone
+from datetime import datetime
+from datetime import timezone as dt_timezone
 from typing import List
 
 from django.conf import settings
@@ -71,7 +72,7 @@ class AuthViewSet(GenericViewSet):
         selected_throttles = throttle_classes_by_action.get(self.action, [])
 
         # Check if throttling is disabled (e.g., in tests)
-        if not getattr(settings, 'REST_FRAMEWORK', {}).get('DEFAULT_THROTTLE_RATES'):
+        if not getattr(settings, "REST_FRAMEWORK", {}).get("DEFAULT_THROTTLE_RATES"):
             logger.debug(f"Throttling disabled for action: {self.action}")
             return []
 
@@ -167,6 +168,7 @@ class AuthViewSet(GenericViewSet):
                 # Schedule email verification AFTER transaction commits
                 try:
                     from .tasks import send_verification_email
+
                     transaction.on_commit(lambda: send_verification_email.delay(user.id, user.email))
                 except ImportError:
                     logger.warning("Email verification task not available")
@@ -194,8 +196,7 @@ class AuthViewSet(GenericViewSet):
                 exc_info=True,
             )
             return Response(
-                {"error": "Registration failed. Please try again."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {"error": "Registration failed. Please try again."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
     @swagger_auto_schema(
@@ -314,8 +315,7 @@ class AuthViewSet(GenericViewSet):
                 exc_info=True,
             )
             return Response(
-                {"error": "Authentication failed. Please try again."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {"error": "Authentication failed. Please try again."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
     @swagger_auto_schema(
@@ -518,6 +518,7 @@ class AuthViewSet(GenericViewSet):
         # Basic IP validation
         try:
             import ipaddress
+
             ipaddress.ip_address(ip)
             return ip
         except ValueError:
@@ -588,7 +589,7 @@ class UserProfileViewSet(RetrieveModelMixin, UpdateModelMixin, GenericViewSet):
         if self.action == "change_password":
             try:
                 # Check if throttling is disabled (e.g., in tests)
-                if not getattr(settings, 'REST_FRAMEWORK', {}).get('DEFAULT_THROTTLE_RATES'):
+                if not getattr(settings, "REST_FRAMEWORK", {}).get("DEFAULT_THROTTLE_RATES"):
                     logger.debug("Throttling disabled for password change")
                     return []
                 return [PasswordChangeRateThrottle()]
@@ -624,8 +625,7 @@ class UserProfileViewSet(RetrieveModelMixin, UpdateModelMixin, GenericViewSet):
 
         if response.status_code == 200:
             logger.info(
-                f"Profile updated: {request.user.email}",
-                extra={"user_id": request.user.id, "action": "profile_update"}
+                f"Profile updated: {request.user.email}", extra={"user_id": request.user.id, "action": "profile_update"}
             )
 
         return response

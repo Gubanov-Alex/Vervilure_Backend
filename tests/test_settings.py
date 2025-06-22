@@ -257,13 +257,7 @@ os.environ["THROTTLING_DISABLED"] = "True"
 
 # Swagger/OpenAPI settings for tests
 SWAGGER_SETTINGS = {
-    "SECURITY_DEFINITIONS": {
-        "Bearer": {
-            "type": "apiKey",
-            "name": "Authorization",
-            "in": "header"
-        }
-    },
+    "SECURITY_DEFINITIONS": {"Bearer": {"type": "apiKey", "name": "Authorization", "in": "header"}},
     "USE_SESSION_AUTH": False,
     "JSON_EDITOR": True,
     "SUPPORTED_SUBMIT_METHODS": ["get", "post", "put", "delete", "patch"],

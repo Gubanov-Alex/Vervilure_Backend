@@ -2,11 +2,10 @@ from unittest.mock import patch
 
 import pytest
 from django.contrib.auth import get_user_model
-from django.urls import reverse, NoReverseMatch
+from django.urls import NoReverseMatch, reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
-
 from src.apps.accounts.models import UserAddress
 
 User = get_user_model()
@@ -93,12 +92,15 @@ class TestAuthViewSet:
             pytest.skip("No valid registration endpoint found")
 
         # Accept various success/validation responses
-        assert_response_in_range(response, [
-            status.HTTP_201_CREATED,
-            status.HTTP_400_BAD_REQUEST,  # Validation errors
-            status.HTTP_409_CONFLICT,     # Email exists
-            status.HTTP_429_TOO_MANY_REQUESTS  # Rate limiting
-        ])
+        assert_response_in_range(
+            response,
+            [
+                status.HTTP_201_CREATED,
+                status.HTTP_400_BAD_REQUEST,  # Validation errors
+                status.HTTP_409_CONFLICT,  # Email exists
+                status.HTTP_429_TOO_MANY_REQUESTS,  # Rate limiting
+            ],
+        )
 
         # If successful, check response structure
         if response.status_code == status.HTTP_201_CREATED:
@@ -124,18 +126,14 @@ class TestAuthViewSet:
             try:
                 response = self.client.post(url, data, format="json")
                 if response.status_code != 404:
-                    assert_response_in_range(response, [
-                        status.HTTP_400_BAD_REQUEST,
-                        status.HTTP_409_CONFLICT,
-                        status.HTTP_429_TOO_MANY_REQUESTS
-                    ])
+                    assert_response_in_range(
+                        response,
+                        [status.HTTP_400_BAD_REQUEST, status.HTTP_409_CONFLICT, status.HTTP_429_TOO_MANY_REQUESTS],
+                    )
 
                     if response.status_code == status.HTTP_400_BAD_REQUEST:
                         # Should contain email validation error
-                        assert any(
-                            field in response.data
-                            for field in ["email", "non_field_errors", "detail"]
-                        )
+                        assert any(field in response.data for field in ["email", "non_field_errors", "detail"])
                     return
             except Exception:
                 continue
@@ -158,12 +156,15 @@ class TestAuthViewSet:
                 response = self.client.post(url, data, format="json")
                 if response.status_code != 404:
                     # Accept various responses based on email verification status
-                    assert_response_in_range(response, [
-                        status.HTTP_200_OK,
-                        status.HTTP_400_BAD_REQUEST,  # Email not verified
-                        status.HTTP_401_UNAUTHORIZED,  # Invalid credentials
-                        status.HTTP_429_TOO_MANY_REQUESTS  # Rate limiting
-                    ])
+                    assert_response_in_range(
+                        response,
+                        [
+                            status.HTTP_200_OK,
+                            status.HTTP_400_BAD_REQUEST,  # Email not verified
+                            status.HTTP_401_UNAUTHORIZED,  # Invalid credentials
+                            status.HTTP_429_TOO_MANY_REQUESTS,  # Rate limiting
+                        ],
+                    )
 
                     if response.status_code == status.HTTP_200_OK:
                         assert any(key in response.data for key in ["user", "tokens", "access"])
@@ -187,11 +188,10 @@ class TestAuthViewSet:
             try:
                 response = self.client.post(url, data, format="json")
                 if response.status_code != 404:
-                    assert_response_in_range(response, [
-                        status.HTTP_400_BAD_REQUEST,
-                        status.HTTP_401_UNAUTHORIZED,
-                        status.HTTP_429_TOO_MANY_REQUESTS
-                    ])
+                    assert_response_in_range(
+                        response,
+                        [status.HTTP_400_BAD_REQUEST, status.HTTP_401_UNAUTHORIZED, status.HTTP_429_TOO_MANY_REQUESTS],
+                    )
                     return
             except Exception:
                 continue
@@ -227,14 +227,17 @@ class TestAuthViewSet:
                 response = self.client.post(url, data, format="json")
                 if response.status_code != 404:
                     # OAuth endpoints may not be implemented or configured differently
-                    assert_response_in_range(response, [
-                        status.HTTP_200_OK,
-                        status.HTTP_201_CREATED,
-                        status.HTTP_400_BAD_REQUEST,
-                        status.HTTP_401_UNAUTHORIZED,
-                        status.HTTP_404_NOT_FOUND,
-                        status.HTTP_501_NOT_IMPLEMENTED
-                    ])
+                    assert_response_in_range(
+                        response,
+                        [
+                            status.HTTP_200_OK,
+                            status.HTTP_201_CREATED,
+                            status.HTTP_400_BAD_REQUEST,
+                            status.HTTP_401_UNAUTHORIZED,
+                            status.HTTP_404_NOT_FOUND,
+                            status.HTTP_501_NOT_IMPLEMENTED,
+                        ],
+                    )
                     return
             except Exception:
                 continue
@@ -258,11 +261,9 @@ class TestAuthViewSet:
             try:
                 response = self.client.post(url, data, format="json")
                 if response.status_code != 404:
-                    assert_response_in_range(response, [
-                        status.HTTP_400_BAD_REQUEST,
-                        status.HTTP_401_UNAUTHORIZED,
-                        status.HTTP_404_NOT_FOUND
-                    ])
+                    assert_response_in_range(
+                        response, [status.HTTP_400_BAD_REQUEST, status.HTTP_401_UNAUTHORIZED, status.HTTP_404_NOT_FOUND]
+                    )
                     return
             except Exception:
                 continue
@@ -287,13 +288,16 @@ class TestAuthViewSet:
             try:
                 response = self.client.post(url, data, format="json")
                 if response.status_code != 404:
-                    assert_response_in_range(response, [
-                        status.HTTP_200_OK,
-                        status.HTTP_204_NO_CONTENT,
-                        status.HTTP_205_RESET_CONTENT,
-                        status.HTTP_400_BAD_REQUEST,  # Missing/invalid token
-                        status.HTTP_401_UNAUTHORIZED  # Not authenticated
-                    ])
+                    assert_response_in_range(
+                        response,
+                        [
+                            status.HTTP_200_OK,
+                            status.HTTP_204_NO_CONTENT,
+                            status.HTTP_205_RESET_CONTENT,
+                            status.HTTP_400_BAD_REQUEST,  # Missing/invalid token
+                            status.HTTP_401_UNAUTHORIZED,  # Not authenticated
+                        ],
+                    )
                     return
             except Exception:
                 continue
@@ -317,11 +321,9 @@ class TestAuthViewSet:
             try:
                 response = self.client.post(url, data, format="json")
                 if response.status_code != 404:
-                    assert_response_in_range(response, [
-                        status.HTTP_200_OK,
-                        status.HTTP_400_BAD_REQUEST,
-                        status.HTTP_401_UNAUTHORIZED
-                    ])
+                    assert_response_in_range(
+                        response, [status.HTTP_200_OK, status.HTTP_400_BAD_REQUEST, status.HTTP_401_UNAUTHORIZED]
+                    )
                     return
             except Exception:
                 continue
@@ -358,10 +360,7 @@ class TestUserViewSet:
             try:
                 response = self.client.get(url)
                 if response.status_code != 404:
-                    assert_response_in_range(response, [
-                        status.HTTP_200_OK,
-                        status.HTTP_401_UNAUTHORIZED
-                    ])
+                    assert_response_in_range(response, [status.HTTP_200_OK, status.HTTP_401_UNAUTHORIZED])
 
                     if response.status_code == status.HTTP_200_OK:
                         assert "email" in response.data
@@ -395,12 +394,15 @@ class TestUserViewSet:
             try:
                 response = self.client.post(url, data, format="json")
                 if response.status_code != 404:
-                    assert_response_in_range(response, [
-                        status.HTTP_201_CREATED,
-                        status.HTTP_400_BAD_REQUEST,
-                        status.HTTP_401_UNAUTHORIZED,
-                        status.HTTP_405_METHOD_NOT_ALLOWED
-                    ])
+                    assert_response_in_range(
+                        response,
+                        [
+                            status.HTTP_201_CREATED,
+                            status.HTTP_400_BAD_REQUEST,
+                            status.HTTP_401_UNAUTHORIZED,
+                            status.HTTP_405_METHOD_NOT_ALLOWED,
+                        ],
+                    )
                     return
             except Exception:
                 continue
@@ -432,10 +434,7 @@ class TestUserViewSet:
             try:
                 response = self.client.get(url)
                 if response.status_code != 404:
-                    assert_response_in_range(response, [
-                        status.HTTP_200_OK,
-                        status.HTTP_401_UNAUTHORIZED
-                    ])
+                    assert_response_in_range(response, [status.HTTP_200_OK, status.HTTP_401_UNAUTHORIZED])
 
                     if response.status_code == status.HTTP_200_OK:
                         assert isinstance(response.data, (list, dict))
@@ -448,10 +447,7 @@ class TestUserViewSet:
     def test_access_other_user_address(self):
         """Test accessing another user's address."""
         other_user = User.objects.create_user(
-            email="other@example.com",
-            password="testpass123",
-            first_name="Other",
-            last_name="User"
+            email="other@example.com", password="testpass123", first_name="Other", last_name="User"
         )
 
         other_address = UserAddress.objects.create(
@@ -477,12 +473,15 @@ class TestUserViewSet:
                 response = self.client.get(url)
                 if response.status_code != 404:
                     # Should not be able to access other user's address
-                    assert_response_in_range(response, [
-                        status.HTTP_404_NOT_FOUND,
-                        status.HTTP_403_FORBIDDEN,
-                        status.HTTP_401_UNAUTHORIZED,
-                        status.HTTP_405_METHOD_NOT_ALLOWED
-                    ])
+                    assert_response_in_range(
+                        response,
+                        [
+                            status.HTTP_404_NOT_FOUND,
+                            status.HTTP_403_FORBIDDEN,
+                            status.HTTP_401_UNAUTHORIZED,
+                            status.HTTP_405_METHOD_NOT_ALLOWED,
+                        ],
+                    )
                     return
             except Exception:
                 continue
@@ -515,11 +514,7 @@ class TestIPAddressHandling:
 
         for url in possible_urls:
             try:
-                response = self.client.post(
-                    url,
-                    {},
-                    HTTP_X_FORWARDED_FOR="192.168.1.1, 10.0.0.1"
-                )
+                response = self.client.post(url, {}, HTTP_X_FORWARDED_FOR="192.168.1.1, 10.0.0.1")
                 # Just test that header is processed (any non-500 response)
                 assert response.status_code < 500
                 return
@@ -602,12 +597,15 @@ class TestSecurityHeaders:
             try:
                 response = self.client.options(url)
                 # CORS might be configured at different levels
-                assert_response_in_range(response, [
-                    status.HTTP_200_OK,
-                    status.HTTP_204_NO_CONTENT,
-                    status.HTTP_404_NOT_FOUND,
-                    status.HTTP_405_METHOD_NOT_ALLOWED,
-                ])
+                assert_response_in_range(
+                    response,
+                    [
+                        status.HTTP_200_OK,
+                        status.HTTP_204_NO_CONTENT,
+                        status.HTTP_404_NOT_FOUND,
+                        status.HTTP_405_METHOD_NOT_ALLOWED,
+                    ],
+                )
                 return
             except Exception:
                 continue
@@ -639,10 +637,7 @@ class TestViewSetErrorHandling:
             try:
                 response = self.client.put(url, {})
                 if response.status_code != 404:
-                    assert_response_in_range(response, [
-                        status.HTTP_405_METHOD_NOT_ALLOWED,
-                        status.HTTP_404_NOT_FOUND
-                    ])
+                    assert_response_in_range(response, [status.HTTP_405_METHOD_NOT_ALLOWED, status.HTTP_404_NOT_FOUND])
                     return
             except Exception:
                 continue
@@ -659,16 +654,9 @@ class TestViewSetErrorHandling:
 
         for url in possible_urls:
             try:
-                response = self.client.post(
-                    url,
-                    "invalid json",
-                    content_type="application/json"
-                )
+                response = self.client.post(url, "invalid json", content_type="application/json")
                 if response.status_code != 404:
-                    assert_response_in_range(response, [
-                        status.HTTP_400_BAD_REQUEST,
-                        status.HTTP_404_NOT_FOUND
-                    ])
+                    assert_response_in_range(response, [status.HTTP_400_BAD_REQUEST, status.HTTP_404_NOT_FOUND])
                     return
             except Exception:
                 continue
@@ -686,11 +674,14 @@ class TestViewSetErrorHandling:
             try:
                 response = self.client.post(url, {"test": "data"})
                 if response.status_code != 404:
-                    assert_response_in_range(response, [
-                        status.HTTP_400_BAD_REQUEST,
-                        status.HTTP_404_NOT_FOUND,
-                        status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                    ])
+                    assert_response_in_range(
+                        response,
+                        [
+                            status.HTTP_400_BAD_REQUEST,
+                            status.HTTP_404_NOT_FOUND,
+                            status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                        ],
+                    )
                     return
             except Exception:
                 continue

@@ -443,9 +443,9 @@ elif IS_CI:
     CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6380/0")
 
 CELERY_BEAT_SCHEDULE = {
-    'cleanup-expired-tokens': {
-        'task': 'src.apps.accounts.tasks.cleanup_expired_tokens',
-        'schedule': 3600,  # Run every hour
+    "cleanup-expired-tokens": {
+        "task": "src.apps.accounts.tasks.cleanup_expired_tokens",
+        "schedule": 3600,  # Run every hour
     },
 }
 

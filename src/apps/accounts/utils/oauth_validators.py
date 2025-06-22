@@ -1,5 +1,6 @@
 import logging
 from typing import Any, Dict, Optional, Tuple
+
 import requests
 
 logger = logging.getLogger(__name__)
@@ -46,11 +47,7 @@ class GoogleOAuthValidator:
     def _get_token_info(self, access_token: str) -> Optional[Dict[str, Any]]:
         """Get token information from Google with comprehensive error handling."""
         try:
-            response = requests.get(
-                self.google_tokeninfo_url,
-                params={"access_token": access_token},
-                timeout=10
-            )
+            response = requests.get(self.google_tokeninfo_url, params={"access_token": access_token}, timeout=10)
 
             if response.status_code == 200:
                 return response.json()
@@ -66,11 +63,7 @@ class GoogleOAuthValidator:
         """Get user information from Google with comprehensive error handling."""
         try:
             headers = {"Authorization": f"Bearer {access_token}"}
-            response = requests.get(
-                self.google_userinfo_url,
-                headers=headers,
-                timeout=10
-            )
+            response = requests.get(self.google_userinfo_url, headers=headers, timeout=10)
 
             if response.status_code == 200:
                 return response.json()

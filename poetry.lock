@@ -708,6 +708,16 @@ redis = ">=3,<4.0.0 || >4.0.0,<4.0.1 || >4.0.1"
 hiredis = ["redis[hiredis] (>=3,!=4.0.0,!=4.0.1)"]
 
 [[package]]
+name = "django-timedeltafield"
+version = "0.7.10"
+description = "TimedeltaField for django models"
+optional = false
+python-versions = "*"
+files = [
+    {file = "django-timedeltafield-0.7.10.tar.gz", hash = "sha256:5b8de370a76e4130c8ad3666d337ab250cf468fcc8a146a3ba720a37c25a40b0"},
+]
+
+[[package]]
 name = "django-types"
 version = "0.21.0"
 description = "Type stubs for Django"
@@ -2001,4 +2011,4 @@ brotli = ["brotli"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.12"
-content-hash = "2120e9d753adf3f389abb623f18311fb034da135b40ca77cc6fe89ec5437b10f"
+content-hash = "9ab7312af3d793a0f1044dbd7cd61b9298dfcbbf3c71478dc24121a51b6a0807"
