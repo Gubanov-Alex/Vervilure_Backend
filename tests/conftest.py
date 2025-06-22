@@ -148,6 +148,18 @@ def regular_user(user_factory):
 
 
 @pytest.fixture
+def superuser(user_factory):
+    """Create a superuser for admin tests."""
+    return user_factory(
+        email="superuser@example.com",
+        first_name="Super",
+        last_name="User",
+        is_staff=True,
+        is_superuser=True
+    )
+
+
+@pytest.fixture
 def admin_user(user_factory):
     """Create an admin test user."""
     return user_factory(
@@ -169,6 +181,13 @@ def unverified_user(user_factory):
         is_email_verified=False,
         is_active=False
     )
+
+
+@pytest.fixture
+def request_factory():
+    """Django request factory for admin tests."""
+    from django.test import RequestFactory
+    return RequestFactory()
 
 
 # Authentication fixtures
@@ -217,7 +236,7 @@ def mock_google_oauth():
 def mock_celery_tasks():
     """Mock Celery tasks for testing."""
     with patch("src.apps.accounts.tasks.send_verification_email") as mock_verification, \
-         patch("src.apps.accounts.tasks.send_password_reset_email") as mock_reset:
+            patch("src.apps.accounts.tasks.send_password_reset_email") as mock_reset:
         mock_verification.delay.return_value = None
         mock_reset.delay.return_value = None
         yield {
@@ -231,11 +250,11 @@ def mock_celery_tasks():
 def throttling_disabled():
     """Disable throttling for specific tests."""
     with override_settings(
-        REST_FRAMEWORK={
-            **settings.REST_FRAMEWORK,
-            "DEFAULT_THROTTLE_CLASSES": [],
-            "DEFAULT_THROTTLE_RATES": {},
-        }
+            REST_FRAMEWORK={
+                **settings.REST_FRAMEWORK,
+                "DEFAULT_THROTTLE_CLASSES": [],
+                "DEFAULT_THROTTLE_RATES": {},
+            }
     ):
         yield
 
@@ -244,20 +263,20 @@ def throttling_disabled():
 def throttling_enabled():
     """Enable throttling for specific tests."""
     with override_settings(
-        REST_FRAMEWORK={
-            **settings.REST_FRAMEWORK,
-            "DEFAULT_THROTTLE_CLASSES": [
-                "rest_framework.throttling.AnonRateThrottle",
-                "rest_framework.throttling.UserRateThrottle",
-            ],
-            "DEFAULT_THROTTLE_RATES": {
-                "anon": "100/hour",
-                "user": "1000/hour",
-                "login": "5/min",
-                "registration": "3/min",
-                "password_change": "3/hour",
-            },
-        }
+            REST_FRAMEWORK={
+                **settings.REST_FRAMEWORK,
+                "DEFAULT_THROTTLE_CLASSES": [
+                    "rest_framework.throttling.AnonRateThrottle",
+                    "rest_framework.throttling.UserRateThrottle",
+                ],
+                "DEFAULT_THROTTLE_RATES": {
+                    "anon": "100/hour",
+                    "user": "1000/hour",
+                    "login": "5/min",
+                    "registration": "3/min",
+                    "password_change": "3/hour",
+                },
+            }
     ):
         yield
 
@@ -381,6 +400,7 @@ def local_environment():
 @pytest.fixture
 def assert_response_codes():
     """Utility for asserting response codes."""
+
     def _assert_codes(response, expected_codes, message=""):
         """Assert that response status code is in expected range."""
         assert response.status_code in expected_codes, (
@@ -448,16 +468,33 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(pytest.mark.slow)
 
 
-# Test session info
+def get_celery_setting(setting_name: str, default_value=None):
+    """Safely get Celery setting with fallback."""
+    try:
+        return getattr(settings, setting_name, default_value)
+    except AttributeError:
+        return default_value
+
+
 @pytest.fixture(scope="session", autouse=True)
 def test_session_info():
-    """Print test session information."""
+    """Print test session information with safe settings access."""
     print(f"\n🚀 Starting test session")
-    print(f"📍 Django settings: {settings.SETTINGS_MODULE}")
+    print(f"📍 Django settings: {getattr(settings, 'SETTINGS_MODULE', 'Not set')}")
     print(f"💾 Database: {settings.DATABASES['default']['NAME']}")
-    print(f"🚫 Throttling: {'Disabled' if not settings.REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] else 'Enabled'}")
-    print(f"⚡ Fast passwords: {'MD5' in settings.PASSWORD_HASHERS[0]}")
-    print(f"🏃 Celery eager: {settings.CELERY_TASK_ALWAYS_EAGER}")
+
+    # Safe access to REST_FRAMEWORK settings
+    rest_framework = getattr(settings, 'REST_FRAMEWORK', {})
+    throttle_rates = rest_framework.get('DEFAULT_THROTTLE_RATES', {})
+    print(f"🚫 Throttling: {'Disabled' if not throttle_rates else 'Enabled'}")
+
+    # Safe access to password hashers
+    password_hashers = getattr(settings, 'PASSWORD_HASHERS', [])
+    has_md5 = any('MD5' in hasher for hasher in password_hashers) if password_hashers else False
+    print(f"⚡ Fast passwords: {has_md5}")
+
+    celery_eager = get_celery_setting('CELERY_TASK_ALWAYS_EAGER', 'Not configured')
+    print(f"🏃 Celery eager: {celery_eager}")
 
     yield
 

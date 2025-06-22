@@ -418,6 +418,49 @@ CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
 CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60
 
+CELERY_TASK_ALWAYS_EAGER = os.environ.get("CELERY_TASK_ALWAYS_EAGER", "False").lower() == "true"
+CELERY_TASK_EAGER_PROPAGATES = CELERY_TASK_ALWAYS_EAGER
+
+# Broker connection retry settings
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_BROKER_CONNECTION_RETRY = True
+CELERY_BROKER_CONNECTION_MAX_RETRIES = 10
+
+# Result backend settings
+CELERY_RESULT_EXPIRES = 3600  # Results expire after 1 hour
+CELERY_RESULT_PERSISTENT = True
+
+# Environment-specific Celery overrides
+if IS_TESTING or os.environ.get("IS_TESTING") == "True":
+    CELERY_TASK_ALWAYS_EAGER = True
+    CELERY_TASK_EAGER_PROPAGATES = True
+    CELERY_BROKER_URL = "memory://"
+    CELERY_RESULT_BACKEND = "cache+memory://"
+
+elif IS_CI:
+    CELERY_TASK_ALWAYS_EAGER = False
+    CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6380/0")
+    CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6380/0")
+
+CELERY_BEAT_SCHEDULE = {
+    'cleanup-expired-tokens': {
+        'task': 'src.apps.accounts.tasks.cleanup_expired_tokens',
+        'schedule': 3600,  # Run every hour
+    },
+}
+
+if not IS_TESTING:
+    CELERY_TASK_ACKS_LATE = True
+    CELERY_TASK_REJECT_ON_WORKER_LOST = True
+    CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+    CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000
+
+CELERY_TASK_ROUTES = {
+    "src.apps.accounts.tasks.send_verification_email": {"queue": "emails"},
+    "src.apps.accounts.tasks.send_password_reset_email": {"queue": "emails"},
+    "src.apps.accounts.tasks.cleanup_expired_tokens": {"queue": "maintenance"},
+}
+
 
 # Email Configuration
 def get_email_config() -> Dict[str, Any]:
@@ -628,3 +671,10 @@ if DEBUG or IS_CI:
         print(f"- DB_HOST: {os.environ.get('DB_HOST', 'NOT SET')}")
         print(f"- DB_PORT: {os.environ.get('DB_PORT', 'NOT SET')}")
         print(f"- DB_NAME: {os.environ.get('DB_NAME', 'NOT SET')}")
+
+    if DEBUG or IS_CI:
+        print(f"🏃 Celery configured:")
+        print(f"  - Eager mode: {CELERY_TASK_ALWAYS_EAGER}")
+        print(f"  - Broker: {CELERY_BROKER_URL}")
+        print(f"  - Result backend: {CELERY_RESULT_BACKEND}")
+        print(f"  - Environment: {'Testing' if IS_TESTING else 'CI' if IS_CI else 'Development'}")
