@@ -1,4 +1,4 @@
-"""JWT Views for User Authentication"""
+"""JWT Views for User Authentication with English Documentation"""
 
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
@@ -11,21 +11,33 @@ from rest_framework_simplejwt.views import (
 
 
 class JWTTokenObtainPairView(TokenObtainPairView):
-    """🔑 JWT: Получение access и refresh токенов"""
+    """🔑 JWT: Obtain access and refresh tokens"""
 
     @swagger_auto_schema(
-        operation_summary="🔑 Получить JWT токены",
+        operation_summary="🔑 Obtain JWT tokens",
         operation_description="""
-        **Аутентификация пользователя и получение JWT токенов**
+        **User authentication and JWT token generation**
 
-        Этот endpoint аутентифицирует пользователя по email/паролю и возвращает:
-        - Access токен (15 минут) - для API запросов
-        - Refresh токен (7 дней) - для обновления access токена
+        This endpoint authenticates users via email/password and returns:
+        - Access token (15 minutes) - for API requests
+        - Refresh token (7 days) - for token renewal
 
-        **Использование access токена:**
+        **Access token usage:**
         ```
         Authorization: Bearer <access_token>
         ```
+        
+        **Token Features:**
+        - Access tokens have short lifespan for security
+        - Refresh tokens are used to obtain new access tokens
+        - All tokens are tied to specific users
+        - Blacklist support for immediate token revocation
+        
+        **Security:**
+        - Uses HS256 algorithm for signing
+        - Includes JTI (JWT ID) for tracking
+        - Supports blacklist for immediate revocation
+        - Rate limiting and brute force protection
         """,
         tags=["🔑 JWT Authentication"],
         request_body=openapi.Schema(
@@ -35,38 +47,38 @@ class JWTTokenObtainPairView(TokenObtainPairView):
                 "email": openapi.Schema(
                     type=openapi.TYPE_STRING,
                     format=openapi.FORMAT_EMAIL,
-                    description="Email пользователя",
+                    description="User email address",
                     example="user@example.com",
                 ),
                 "password": openapi.Schema(
                     type=openapi.TYPE_STRING,
                     format=openapi.FORMAT_PASSWORD,
-                    description="Пароль пользователя",
+                    description="User password",
                     example="SecurePassword123!",
                 ),
             },
         ),
         responses={
             200: openapi.Response(
-                description="Токены получены успешно",
+                description="Tokens obtained successfully",
                 schema=openapi.Schema(
                     type=openapi.TYPE_OBJECT,
                     properties={
                         "access": openapi.Schema(
                             type=openapi.TYPE_STRING,
-                            description="JWT Access токен (15 минут)",
+                            description="JWT Access token (15 minutes)",
                             example="eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
                         ),
                         "refresh": openapi.Schema(
                             type=openapi.TYPE_STRING,
-                            description="JWT Refresh токен (7 дней)",
+                            description="JWT Refresh token (7 days)",
                             example="eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
                         ),
                     },
                 ),
             ),
-            401: "Неверные учетные данные",
-            400: "Ошибка валидации данных",
+            401: "Invalid credentials",
+            400: "Validation error",
         },
     )
     def post(self, request, *args, **kwargs):
@@ -74,19 +86,32 @@ class JWTTokenObtainPairView(TokenObtainPairView):
 
 
 class JWTTokenRefreshView(TokenRefreshView):
-    """🔄 JWT: Обновление access токена"""
+    """🔄 JWT: Refresh access token"""
 
     @swagger_auto_schema(
-        operation_summary="🔄 Обновить access токен",
+        operation_summary="🔄 Refresh access token",
         operation_description="""
-        **Получить новый access токен используя refresh токен**
+        **Obtain new access token using refresh token**
 
-        Когда access токен истекает (через 15 минут), используйте этот endpoint
-        для получения нового access токена без повторной аутентификации.
+        When access token expires (after 15 minutes), use this endpoint
+        to get a new access token without re-authentication.
 
-        **Безопасность:**
-        - Refresh токены ротируются (старый становится недействительным)
-        - Если refresh токен истек, нужно заново логиниться
+        **Token Rotation:**
+        - Each refresh generates a new access token
+        - Refresh tokens can be rotated (optional)
+        - Old tokens automatically become invalid
+        
+        **Security:**
+        - Validates refresh token integrity
+        - Checks against blacklist
+        - Protection against replay attacks
+        - Limited token lifespan
+        
+        **Best Practices:**
+        - Refresh tokens proactively before expiration
+        - Implement automatic refresh in client applications
+        - Handle refresh token expiration scenarios
+        - Store tokens securely on client side
         """,
         tags=["🔑 JWT Authentication"],
         request_body=openapi.Schema(
@@ -95,27 +120,27 @@ class JWTTokenRefreshView(TokenRefreshView):
             properties={
                 "refresh": openapi.Schema(
                     type=openapi.TYPE_STRING,
-                    description="Действующий JWT refresh токен",
+                    description="Valid JWT refresh token",
                     example="eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
                 ),
             },
         ),
         responses={
             200: openapi.Response(
-                description="Токен обновлен успешно",
+                description="Token refreshed successfully",
                 schema=openapi.Schema(
                     type=openapi.TYPE_OBJECT,
                     properties={
                         "access": openapi.Schema(
                             type=openapi.TYPE_STRING,
-                            description="Новый JWT access токен",
+                            description="New JWT access token",
                             example="eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
                         ),
                     },
                 ),
             ),
-            401: "Недействительный или истекший refresh токен",
-            400: "Неверный формат токена",
+            401: "Invalid or expired refresh token",
+            400: "Invalid token format",
         },
     )
     def post(self, request, *args, **kwargs):
@@ -123,22 +148,37 @@ class JWTTokenRefreshView(TokenRefreshView):
 
 
 class JWTTokenVerifyView(TokenVerifyView):
-    """✅ JWT: Проверка валидности токена"""
+    """✅ JWT: Verify token validity"""
 
     @swagger_auto_schema(
-        operation_summary="✅ Проверить токен",
+        operation_summary="✅ Verify token",
         operation_description="""
-        **Проверить валидность JWT токена**
+        **Verify JWT token validity**
 
-        Используйте этот endpoint для проверки:
-        - Не истек ли токен
-        - Правильно ли подписан токен
-        - Не заблокирован ли токен
+        Use this endpoint to check:
+        - Token expiration status (exp claim)
+        - Token signature validity
+        - Blacklist status
+        - Token structure integrity
 
-        **Применение:**
-        - Валидация перед критическими операциями
-        - Проверки в frontend приложениях
-        - Отладка проблем с токенами
+        **Verification Parameters:**
+        - Expiration time (exp)
+        - Token signature
+        - Payload structure
+        - Blacklist status
+        - Signing algorithm
+        
+        **Use Cases:**
+        - Validation before critical operations
+        - Frontend application checks
+        - Token debugging and troubleshooting
+        - Authorization middleware validation
+        
+        **Important Notes:**
+        - Token remains valid until expiration
+        - Verification does not extend token lifetime
+        - Use for validation in critical operations
+        - Does not consume any token uses
         """,
         tags=["🔑 JWT Authentication"],
         request_body=openapi.Schema(
@@ -147,25 +187,25 @@ class JWTTokenVerifyView(TokenVerifyView):
             properties={
                 "token": openapi.Schema(
                     type=openapi.TYPE_STRING,
-                    description="JWT токен для проверки (access или refresh)",
+                    description="JWT token to verify (access or refresh)",
                     example="eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
                 ),
             },
         ),
         responses={
             200: openapi.Response(
-                description="Токен действителен",
+                description="Token is valid",
                 schema=openapi.Schema(
                     type=openapi.TYPE_OBJECT,
                     properties={
                         "token_type": openapi.Schema(
-                            type=openapi.TYPE_STRING, description="Тип проверенного токена", example="access"
+                            type=openapi.TYPE_STRING, description="Type of verified token", example="access"
                         ),
                     },
                 ),
             ),
-            401: "Токен недействителен или истек",
-            400: "Неверный формат токена",
+            401: "Token is invalid or expired",
+            400: "Invalid token format",
         },
     )
     def post(self, request, *args, **kwargs):
@@ -173,23 +213,36 @@ class JWTTokenVerifyView(TokenVerifyView):
 
 
 class JWTTokenBlacklistView(TokenBlacklistView):
-    """🚫 JWT: Блокировка refresh токена (Logout)"""
+    """🚫 JWT: Blacklist refresh token (Logout)"""
 
     @swagger_auto_schema(
-        operation_summary="🚫 Заблокировать токен",
+        operation_summary="🚫 Blacklist token",
         operation_description="""
-        **Добавить refresh токен в черный список (logout)**
+        **Add refresh token to blacklist (logout)**
 
-        Этот endpoint блокирует refresh токен, что эффективно завершает сессию
-        пользователя. После блокировки:
-        - Refresh токен нельзя использовать для обновления access токена
-        - Access токен продолжает работать до истечения времени
-        - Для получения новых токенов нужно заново логиниться
+        This endpoint blacklists a refresh token, effectively ending the user session.
+        After blacklisting:
+        - Refresh token cannot be used to obtain new access tokens
+        - Access token continues to work until expiration
+        - User must re-authenticate to get new tokens
 
-        **Использование:**
-        - Logout пользователя
-        - Реакция на инциденты безопасности
-        - Отзыв скомпрометированных токенов
+        **Blacklist Mechanism:**
+        - Token is added to database blacklist
+        - Blacklist check occurs on every token use
+        - Blacklisted tokens are auto-deleted after expiration
+        - Supports both refresh and access tokens
+        
+        **Use Cases:**
+        - User logout from application
+        - Security incident response
+        - Compromised token revocation
+        - Session termination on suspicious activity
+        
+        **Security Benefits:**
+        - Immediate token invalidation
+        - Protection against token reuse
+        - Audit trail for all blacklist operations
+        - Integration with monitoring systems
         """,
         tags=["🔑 JWT Authentication"],
         request_body=openapi.Schema(
@@ -198,25 +251,25 @@ class JWTTokenBlacklistView(TokenBlacklistView):
             properties={
                 "refresh": openapi.Schema(
                     type=openapi.TYPE_STRING,
-                    description="JWT refresh токен для блокировки",
+                    description="JWT refresh token to blacklist",
                     example="eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
                 ),
             },
         ),
         responses={
             200: openapi.Response(
-                description="Токен заблокирован успешно",
+                description="Token blacklisted successfully",
                 schema=openapi.Schema(
                     type=openapi.TYPE_OBJECT,
                     properties={
                         "detail": openapi.Schema(
-                            type=openapi.TYPE_STRING, example="Токен успешно добавлен в черный список"
+                            type=openapi.TYPE_STRING, example="Token successfully added to blacklist"
                         ),
                     },
                 ),
             ),
-            400: "Недействительный формат токена или уже заблокирован",
-            401: "Токен недействителен",
+            400: "Invalid token format or already blacklisted",
+            401: "Token is invalid",
         },
     )
     def post(self, request, *args, **kwargs):

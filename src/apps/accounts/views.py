@@ -41,10 +41,10 @@ User = get_user_model()
 
 class AuthViewSet(GenericViewSet):
     """
-    Authentication ViewSet with comprehensive security features.
+    🔐 Authentication: Advanced security and OAuth integration
 
-    Provides secure registration, login, logout, and social authentication
-    with rate limiting, logging, and brute force protection.
+    Comprehensive authentication system with enhanced security features,
+    brute force protection, and seamless Google OAuth integration.
     """
 
     permission_classes = [permissions.AllowAny]
@@ -91,13 +91,37 @@ class AuthViewSet(GenericViewSet):
             return [permissions.IsAuthenticated()]
         return [permissions.AllowAny()]
 
+    # Registration endpoint
     @swagger_auto_schema(
-        operation_description="Register a new user with email verification",
+        operation_summary="🔐 User Registration",
+        operation_description="""
+          **Secure user registration with comprehensive validation**
+
+          **Features:**
+          - Email uniqueness validation
+          - Strong password requirements  
+          - Automatic email verification workflow
+          - Anti-spam protection with rate limiting
+          - Comprehensive security audit logging
+
+          **Password Requirements:**
+          - Minimum 8 characters
+          - At least one uppercase letter
+          - At least one lowercase letter
+          - At least one digit
+          - At least one special character
+
+          **Security Features:**
+          - IP-based rate limiting (5 attempts/hour)
+          - Brute force protection
+          - Transaction safety with Celery integration
+          - Email verification token generation
+          """,
+        tags=["🔐 Authentication"],
         request_body=UserRegistrationSerializer,
-        tags=["Authentication"],
         responses={
             201: openapi.Response(
-                description="User created successfully",
+                description="Registration successful",
                 schema=openapi.Schema(
                     type=openapi.TYPE_OBJECT,
                     properties={
@@ -105,11 +129,18 @@ class AuthViewSet(GenericViewSet):
                         "tokens": openapi.Schema(
                             type=openapi.TYPE_OBJECT,
                             properties={
-                                "access": openapi.Schema(type=openapi.TYPE_STRING),
-                                "refresh": openapi.Schema(type=openapi.TYPE_STRING),
+                                "access": openapi.Schema(
+                                    type=openapi.TYPE_STRING, description="Access token (15 minutes)"
+                                ),
+                                "refresh": openapi.Schema(
+                                    type=openapi.TYPE_STRING, description="Refresh token (7 days)"
+                                ),
                             },
                         ),
-                        "message": openapi.Schema(type=openapi.TYPE_STRING),
+                        "message": openapi.Schema(
+                            type=openapi.TYPE_STRING,
+                            example="Registration successful. Please check your email for verification.",
+                        ),
                     },
                 ),
             ),
@@ -203,12 +234,35 @@ class AuthViewSet(GenericViewSet):
             )
 
     @swagger_auto_schema(
-        operation_description="Authenticate with Google OAuth token",
+        operation_summary="🔐 Google OAuth Authentication",
+        operation_description="""
+            **Seamless Google OAuth 2.0 integration**
+
+            **Features:**
+            - Google account verification via OAuth API
+            - Automatic user creation or account linking
+            - Secure profile data import from Google
+            - JWT token generation with user context
+            - Enhanced user experience with social login
+
+            **OAuth Process Flow:**
+            1. Client obtains Google OAuth access token
+            2. Server validates token with Google API
+            3. User profile data retrieval and verification
+            4. Account creation or existing account linking
+            5. JWT token generation and secure session establishment
+
+            **Security Benefits:**
+            - Pre-verified email addresses from Google
+            - Reduced password management complexity
+            - OAuth 2.0 security standards compliance
+            - Rate limiting and abuse prevention
+            """,
+        tags=["🔐 Authentication"],
         request_body=GoogleOAuthSerializer,
-        tags=["Authentication"],
         responses={
             200: openapi.Response(
-                description="Google authentication successful",
+                description="Google OAuth authentication successful",
                 schema=openapi.Schema(
                     type=openapi.TYPE_OBJECT,
                     properties={
@@ -220,8 +274,12 @@ class AuthViewSet(GenericViewSet):
                                 "refresh": openapi.Schema(type=openapi.TYPE_STRING),
                             },
                         ),
-                        "message": openapi.Schema(type=openapi.TYPE_STRING),
-                        "is_new_user": openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        "message": openapi.Schema(
+                            type=openapi.TYPE_STRING, example="Google authentication successful."
+                        ),
+                        "is_new_user": openapi.Schema(
+                            type=openapi.TYPE_BOOLEAN, description="Indicates if this is a new user registration"
+                        ),
                     },
                 ),
             ),
@@ -321,10 +379,35 @@ class AuthViewSet(GenericViewSet):
                 {"error": "Authentication failed. Please try again."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
+    # Login endpoint
     @swagger_auto_schema(
-        operation_description="Authenticate user with enhanced security",
+        operation_summary="🔐 User Login",
+        operation_description="""
+        **Secure user authentication with advanced protection**
+
+        **Features:**
+        - Multi-factor security validation
+        - IP-based brute force protection
+        - Intelligent login attempt monitoring
+        - JWT token generation with user context
+        - Comprehensive session metadata tracking
+
+        **Security Features:**
+        - Rate limiting per IP address (5 attempts/hour)
+        - Failed attempt tracking and analysis
+        - Automatic account protection mechanisms
+        - Real-time security event logging
+        - Session fingerprinting and validation
+
+        **Authentication Flow:**
+        1. Email and password validation
+        2. Account status verification
+        3. Brute force protection checks
+        4. JWT token generation
+        5. Login metadata updates
+        """,
+        tags=["🔐 Authentication"],
         request_body=UserLoginSerializer,
-        tags=["Authentication"],
         responses={
             200: openapi.Response(
                 description="Login successful",
@@ -335,11 +418,15 @@ class AuthViewSet(GenericViewSet):
                         "tokens": openapi.Schema(
                             type=openapi.TYPE_OBJECT,
                             properties={
-                                "access": openapi.Schema(type=openapi.TYPE_STRING),
-                                "refresh": openapi.Schema(type=openapi.TYPE_STRING),
+                                "access": openapi.Schema(
+                                    type=openapi.TYPE_STRING, description="Access token (15 minutes)"
+                                ),
+                                "refresh": openapi.Schema(
+                                    type=openapi.TYPE_STRING, description="Refresh token (7 days)"
+                                ),
                             },
                         ),
-                        "message": openapi.Schema(type=openapi.TYPE_STRING),
+                        "message": openapi.Schema(type=openapi.TYPE_STRING, example="Login successful."),
                     },
                 ),
             ),
@@ -405,15 +492,58 @@ class AuthViewSet(GenericViewSet):
             status=status.HTTP_200_OK,
         )
 
+    # Logout endpoint
     @swagger_auto_schema(
-        operation_description="Secure logout with token blacklisting",
-        tags=["Authentication"],
+        operation_summary="🔐 Secure Logout",
+        operation_description="""
+        **Secure logout with comprehensive token management**
+
+        **Features:**
+        - Token validation and ownership verification
+        - Immediate token blacklisting for security
+        - Complete session termination
+        - Comprehensive security audit trail creation
+        - Multi-device logout support
+
+        **Security Benefits:**
+        - Immediate token invalidation prevents reuse
+        - Prevents session hijacking attacks
+        - Comprehensive security event logging
+        - Clean session cleanup and management
+        - Token ownership validation before blacklisting
+
+        **Logout Process:**
+        1. Refresh token validation
+        2. Token ownership verification
+        3. Blacklist token addition
+        4. Audit trail creation
+        5. Security event logging
+        """,
+        tags=["🔐 Authentication"],
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
-            properties={"refresh": openapi.Schema(type=openapi.TYPE_STRING, description="Refresh token to blacklist")},
             required=["refresh"],
+            properties={
+                "refresh": openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description="Refresh token to blacklist",
+                    example="eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                ),
+            },
         ),
-        responses={200: "Logout successful", 400: "Invalid or missing token"},
+        responses={
+            200: openapi.Response(
+                description="Logout successful",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        "message": openapi.Schema(type=openapi.TYPE_STRING, example="Logout successful."),
+                    },
+                ),
+            ),
+            400: "Invalid or missing token",
+            401: "Authentication required",
+        },
     )
     @action(detail=False, methods=["post"], permission_classes=[permissions.IsAuthenticated])
     def logout(self, request) -> Response:
@@ -502,15 +632,63 @@ class AuthViewSet(GenericViewSet):
             )
             return Response({"error": "Invalid token."}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Password Reset endpoint
+
     @swagger_auto_schema(
-        operation_description="Request password reset email",
-        tags=["Authentication"],
+        operation_summary="🔐 Password Reset Request",
+        operation_description="""
+           **Secure password reset initiation with protection**
+
+           **Features:**
+           - Email address validation and verification
+           - Secure token generation with expiration
+           - Rate limiting protection against abuse
+           - Email delivery confirmation and tracking
+           - Anti-enumeration security measures
+
+           **Security Features:**
+           - Rate limiting (3 attempts/hour per IP)
+           - Email enumeration prevention
+           - Secure token generation with Django's built-in system
+           - Comprehensive audit logging
+           - Transaction safety with Celery integration
+
+           **Reset Process:**
+           1. Email address validation
+           2. User account verification
+           3. Secure reset token generation
+           4. Email delivery with reset link
+           5. Comprehensive security logging
+           """,
+        tags=["🔐 Authentication"],
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
-            properties={"email": openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_EMAIL)},
             required=["email"],
+            properties={
+                "email": openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    format=openapi.FORMAT_EMAIL,
+                    description="User email address",
+                    example="user@example.com",
+                ),
+            },
         ),
-        responses={200: "Password reset email sent", 400: "Invalid email", 429: "Rate limit exceeded"},
+        responses={
+            200: openapi.Response(
+                description="Password reset email sent",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        "message": openapi.Schema(
+                            type=openapi.TYPE_STRING,
+                            example="If an account with that email exists, a password reset link has been sent.",
+                        ),
+                    },
+                ),
+            ),
+            400: "Invalid email address",
+            429: "Rate limit exceeded",
+        },
     )
     @action(detail=False, methods=["post"])
     def password_reset(self, request) -> Response:
@@ -571,19 +749,54 @@ class AuthViewSet(GenericViewSet):
             status=status.HTTP_200_OK,
         )
 
+    # Password Reset Confirm endpoint
     @swagger_auto_schema(
-        operation_description="Confirm password reset with token",
-        tags=["Authentication"],
+        operation_summary="🔐 Password Reset Confirmation",
+        operation_description="""
+        **Secure password reset completion with validation**
+
+        **Features:**
+        - Secure token validation and expiration checking
+        - Strong password requirements enforcement
+        - Secure password update with hashing
+        - Automatic session invalidation for security
+        - Comprehensive audit trail maintenance
+
+        **Security Measures:**
+        - Token expiration validation (24 hours)
+        - Password strength requirements enforcement
+        - All existing sessions invalidation
+        - Comprehensive security event logging
+        - Protection against token replay attacks
+
+        **Confirmation Process:**
+        1. Token and UID validation
+        2. Password strength verification
+        3. Secure password update
+        4. Session cleanup
+        5. Security audit logging
+        """,
+        tags=["🔐 Authentication"],
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
-            properties={
-                "uid": openapi.Schema(type=openapi.TYPE_STRING),
-                "token": openapi.Schema(type=openapi.TYPE_STRING),
-                "new_password": openapi.Schema(type=openapi.TYPE_STRING),
-            },
             required=["uid", "token", "new_password"],
+            properties={
+                "uid": openapi.Schema(type=openapi.TYPE_STRING, description="User ID from reset email", example="MQ"),
+                "token": openapi.Schema(
+                    type=openapi.TYPE_STRING, description="Reset token from email", example="5ab-c4d2f8e9a7b6c1d3"
+                ),
+                "new_password": openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    format=openapi.FORMAT_PASSWORD,
+                    description="New strong password",
+                    example="NewSecurePassword123!",
+                ),
+            },
         ),
-        responses={200: "Password reset successful", 400: "Invalid token or validation errors"},
+        responses={
+            200: "Password reset successful",
+            400: "Invalid token or validation errors",
+        },
     )
     @action(detail=False, methods=["post"])
     def password_reset_confirm(self, request) -> Response:
@@ -640,7 +853,7 @@ class AuthViewSet(GenericViewSet):
 
     @swagger_auto_schema(
         operation_description="Verify email via GET request from email link",
-        tags=["Authentication"],
+        tags=["Authentication Email Verification"],
         manual_parameters=[
             openapi.Parameter(
                 "token",
@@ -705,7 +918,7 @@ class AuthViewSet(GenericViewSet):
 
     @swagger_auto_schema(
         operation_description="Resend email verification",
-        tags=["Authentication"],
+        tags=["Authentication Email Verification"],
         responses={
             200: "Verification email sent",
             400: "Email already verified or user not found",
@@ -746,7 +959,7 @@ class AuthViewSet(GenericViewSet):
 
     @swagger_auto_schema(
         operation_description="Verify email via POST request with token",
-        tags=["Authentication"],
+        tags=["Authentication Email Verification"],
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             properties={
@@ -888,10 +1101,10 @@ class AuthViewSet(GenericViewSet):
 
 class UserProfileViewSet(RetrieveModelMixin, UpdateModelMixin, GenericViewSet):
     """
-    User profile management with enhanced security.
+    👤 User Management: Comprehensive profile and security management
 
-    Provides secure profile operations with proper permissions
-    and comprehensive logging.
+    Advanced user profile management system with enhanced security features,
+    comprehensive address management, and extensive account controls.
     """
 
     serializer_class = UserProfileSerializer
@@ -915,23 +1128,86 @@ class UserProfileViewSet(RetrieveModelMixin, UpdateModelMixin, GenericViewSet):
         return []
 
     def get_object(self) -> User:
-        """Return current authenticated user."""
+        """Return the current authenticated user."""
         return self.request.user
 
+    # Profile Retrieve endpoint
     @swagger_auto_schema(
-        operation_description="Get current user profile",
-        tags=["User Management"],
-        responses={200: UserProfileSerializer},
+        operation_summary="👤 Get User Profile",
+        operation_description="""
+        **Retrieve comprehensive user profile information**
+
+        **Features:**
+        - Complete profile data with security metadata
+        - Account verification status information
+        - Last login and activity tracking
+        - Profile completion status analysis
+        - Privacy settings and preferences
+
+        **Profile Information Includes:**
+        - Personal details (name, email, phone)
+        - Account verification and security status
+        - Last login information and IP tracking
+        - Profile completion percentage
+        - Privacy and notification settings
+        - Avatar and profile customization
+
+        **Security Features:**
+        - Authentication required for access
+        - User-specific data isolation
+        - Comprehensive audit logging
+        - Rate limiting for sensitive operations
+        """,
+        tags=["👤 User Management"],
+        responses={
+            200: openapi.Response(
+                description="Profile retrieved successfully",
+                schema=UserProfileSerializer,
+            ),
+            401: "Authentication required",
+        },
     )
     def retrieve(self, request, *args, **kwargs) -> Response:
         """Get current user profile information."""
         return super().retrieve(request, *args, **kwargs)
 
+    # Profile Update endpoint
     @swagger_auto_schema(
-        operation_description="Update user profile",
-        tags=["User Management"],
+        operation_summary="👤 Update User Profile",
+        operation_description="""
+        **Update user profile information with validation**
+
+        **Features:**
+        - Partial profile updates support
+        - Comprehensive data validation
+        - Real-time change tracking
+        - Security event logging
+        - Profile completion analysis
+
+        **Updatable Fields:**
+        - First name and last name
+        - Phone number with validation
+        - Date of birth with privacy controls
+        - Profile preferences and settings
+        - Privacy and notification preferences
+        - Marketing consent and subscriptions
+
+        **Validation Features:**
+        - Data format validation
+        - Business rule enforcement
+        - Duplicate detection
+        - Security constraint checking
+        """,
+        tags=["👤 User Management"],
         request_body=UserProfileSerializer,
-        responses={200: UserProfileSerializer},
+        responses={
+            200: openapi.Response(
+                description="Profile updated successfully",
+                schema=UserProfileSerializer,
+            ),
+            400: "Validation errors",
+            401: "Authentication required",
+        },
     )
     def partial_update(self, request, *args, **kwargs) -> Response:
         """Update user profile information with logging."""
@@ -944,11 +1220,49 @@ class UserProfileViewSet(RetrieveModelMixin, UpdateModelMixin, GenericViewSet):
 
         return response
 
+    # Password Change endpoint
     @swagger_auto_schema(
-        operation_description="Change user password securely",
-        tags=["User Management"],
+        operation_summary="👤 Change Password",
+        operation_description="""
+        **Secure password change with comprehensive validation**
+
+        **Features:**
+        - Current password verification for security
+        - Strong password validation and requirements
+        - Rate limiting protection against abuse
+        - Comprehensive security event logging
+        - Optional session invalidation
+
+        **Security Features:**
+        - Password strength requirements enforcement
+        - Brute force protection with rate limiting
+        - All sessions invalidation option
+        - Real-time security threat detection
+        - Comprehensive audit trail maintenance
+
+        **Password Requirements:**
+        - Minimum 8 characters length
+        - Uppercase and lowercase letters
+        - At least one digit
+        - At least one special character
+        - Different from previous passwords
+        """,
+        tags=["👤 User Management"],
         request_body=PasswordChangeSerializer,
-        responses={200: "Password changed successfully", 400: "Validation errors", 429: "Rate limit exceeded"},
+        responses={
+            200: openapi.Response(
+                description="Password changed successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        "message": openapi.Schema(type=openapi.TYPE_STRING, example="Password changed successfully."),
+                    },
+                ),
+            ),
+            400: "Validation errors",
+            401: "Authentication required",
+            429: "Rate limit exceeded",
+        },
     )
     @action(detail=False, methods=["post"])
     def change_password(self, request) -> Response:
@@ -980,10 +1294,35 @@ class UserProfileViewSet(RetrieveModelMixin, UpdateModelMixin, GenericViewSet):
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    # Addresses List endpoint
     @swagger_auto_schema(
-        operation_description="Get user addresses",
-        tags=["User Management"],
-        responses={200: UserAddressSerializer(many=True)},
+        operation_summary="👤 Get User Addresses",
+        operation_description="""
+        **Retrieve all user addresses with optimization**
+
+        **Features:**
+        - Complete address list with details
+        - Default address indication
+        - Address type categorization (home, work, etc.)
+        - Optimized database queries for performance
+        - Comprehensive address metadata
+
+        **Address Information Includes:**
+        - Full address details with validation
+        - Default address marking and management
+        - Address type classification
+        - Delivery preferences and notes
+        - Creation and modification timestamps
+        - Geographic and postal validation status
+        """,
+        tags=["👤 User Management"],
+        responses={
+            200: openapi.Response(
+                description="Addresses retrieved successfully",
+                schema=UserAddressSerializer(many=True),
+            ),
+            401: "Authentication required",
+        },
     )
     @action(detail=False, methods=["get"])
     def addresses(self, request) -> Response:
@@ -992,11 +1331,42 @@ class UserProfileViewSet(RetrieveModelMixin, UpdateModelMixin, GenericViewSet):
         serializer = UserAddressSerializer(addresses, many=True)
         return Response(serializer.data)
 
+    # Add Address endpoint
     @swagger_auto_schema(
-        operation_description="Add new user address",
-        tags=["User Management"],
+        operation_summary="👤 Add New Address",
+        operation_description="""
+        **Add new user address with comprehensive validation**
+
+        **Features:**
+        - Address format validation and verification
+        - Duplicate address detection and prevention
+        - Automatic default address handling
+        - Geographic validation and standardization
+        - Comprehensive audit logging
+
+        **Address Validation:**
+        - Required field validation
+        - Postal code format verification
+        - Geographic coordinate validation
+        - Duplicate address prevention
+        - International address format support
+
+        **Management Features:**
+        - Automatic default address assignment
+        - Address type classification
+        - Delivery preference configuration
+        - Privacy and sharing controls
+        """,
+        tags=["👤 User Management"],
         request_body=UserAddressSerializer,
-        responses={201: UserAddressSerializer, 400: "Validation errors"},
+        responses={
+            201: openapi.Response(
+                description="Address added successfully",
+                schema=UserAddressSerializer,
+            ),
+            400: "Validation errors",
+            401: "Authentication required",
+        },
     )
     @action(detail=False, methods=["post"])
     def add_address(self, request) -> Response:
@@ -1022,11 +1392,43 @@ class UserProfileViewSet(RetrieveModelMixin, UpdateModelMixin, GenericViewSet):
             return x_forwarded_for.split(",")[0].strip()
         return request.META.get("REMOTE_ADDR", "0.0.0.0")
 
+    # Update Address endpoint
     @swagger_auto_schema(
-        operation_description="Update specific user address",
-        tags=["User Management"],
+        operation_summary="👤 Update Address",
+        operation_description="""
+        **Update specific user address with validation**
+
+        **Features:**
+        - Partial address updates support
+        - Address ownership validation
+        - Real-time change tracking
+        - Geographic validation updates
+        - Comprehensive audit logging
+
+        **Update Capabilities:**
+        - Individual field updates
+        - Address type changes
+        - Default status modification
+        - Complete address replacement
+        - Delivery preference updates
+
+        **Security Features:**
+        - Address ownership verification
+        - Data validation and sanitization
+        - Change tracking and auditing
+        - Geographic coordinate validation
+        """,
+        tags=["👤 User Management"],
         request_body=UserAddressSerializer,
-        responses={200: UserAddressSerializer, 404: "Address not found"},
+        responses={
+            200: openapi.Response(
+                description="Address updated successfully",
+                schema=UserAddressSerializer,
+            ),
+            400: "Validation errors",
+            401: "Authentication required",
+            404: "Address not found",
+        },
     )
     @action(detail=False, methods=["patch"], url_path="addresses/(?P<address_id>[^/.]+)")
     def update_address(self, request, address_id=None) -> Response:
@@ -1049,10 +1451,40 @@ class UserProfileViewSet(RetrieveModelMixin, UpdateModelMixin, GenericViewSet):
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    # Delete Address endpoint
     @swagger_auto_schema(
-        operation_description="Delete user address",
-        tags=["User Management"],
-        responses={204: "Address deleted", 404: "Address not found"},
+        operation_summary="👤 Delete Address",
+        operation_description="""
+        **Delete specific user address with safety checks**
+
+        **Features:**
+        - Address ownership validation
+        - Default address protection and warnings
+        - Cascade relationship handling
+        - Comprehensive security logging
+        - Soft delete options for data retention
+
+        **Safety Features:**
+        - Ownership verification before deletion
+        - Default address protection warnings
+        - Related order data preservation
+        - Soft delete options for audit trails
+        - Comprehensive security audit logging
+
+        **Deletion Process:**
+        1. Address ownership verification
+        2. Default address status checking
+        3. Related data impact analysis
+        4. Secure deletion execution
+        5. Audit trail maintenance
+        """,
+        tags=["👤 User Management"],
+        responses={
+            204: "Address deleted successfully",
+            400: "Cannot delete default address",
+            401: "Authentication required",
+            404: "Address not found",
+        },
     )
     @action(detail=False, methods=["delete"], url_path="addresses/(?P<address_id>[^/.]+)")
     def delete_address(self, request, address_id=None) -> Response:
@@ -1071,10 +1503,49 @@ class UserProfileViewSet(RetrieveModelMixin, UpdateModelMixin, GenericViewSet):
         except UserAddress.DoesNotExist:
             return Response({"error": "Address not found"}, status=status.HTTP_404_NOT_FOUND)
 
+    # Set Default Address endpoint
     @swagger_auto_schema(
-        operation_description="Set default user address",
-        tags=["User Management"],
-        responses={200: "Default address updated", 404: "Address not found"},
+        operation_summary="👤 Set Default Address",
+        operation_description="""
+        **Set address as default with automatic management**
+
+        **Features:**
+        - Automatic default address switching
+        - Previous default address clearing
+        - Transaction safety and consistency
+        - User preference notifications
+        - Comprehensive change tracking
+
+        **Default Management:**
+        - Single default address enforcement
+        - Automatic previous default clearing
+        - Transaction consistency guarantees
+        - User preference synchronization
+        - Order and delivery integration updates
+
+        **Process Flow:**
+        1. Address ownership verification
+        2. Previous default identification
+        3. Atomic default switching
+        4. User preference updates
+        5. Change notification dispatch
+        """,
+        tags=["👤 User Management"],
+        responses={
+            200: openapi.Response(
+                description="Default address updated successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        "message": openapi.Schema(
+                            type=openapi.TYPE_STRING, example="Default address updated successfully."
+                        ),
+                    },
+                ),
+            ),
+            401: "Authentication required",
+            404: "Address not found",
+        },
     )
     @action(detail=False, methods=["post"], url_path="addresses/(?P<address_id>[^/.]+)/set-default")
     def set_default_address(self, request, address_id=None) -> Response:
