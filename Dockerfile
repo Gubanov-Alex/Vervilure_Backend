@@ -34,10 +34,16 @@ ARG GROUP_ID=1000
 RUN groupadd --gid $GROUP_ID django \
     && useradd --uid $USER_ID --gid django --shell /bin/bash --create-home django
 
-# Create directories with proper permissions
-# ВАЖНО: Создаём все директории, включая migrations
+# Copy entrypoint script first
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Copy application files
+COPY . .
+
+# Create all necessary directories AFTER copying files
 RUN mkdir -p /app/logs /app/static /app/staticfiles /app/media /app/templates \
-    /app/src/apps/accounts/migrations \
+    && mkdir -p /app/src/apps/accounts/migrations \
     /app/src/apps/orders/migrations \
     /app/src/apps/products/migrations \
     /app/src/apps/cart/migrations \
@@ -45,31 +51,28 @@ RUN mkdir -p /app/logs /app/static /app/staticfiles /app/media /app/templates \
     /app/src/apps/shipping/migrations \
     /app/src/apps/payments/migrations \
     /app/src/apps/reviews/migrations \
-    /app/src/apps/analytics/migrations \
-    && touch /app/src/apps/accounts/migrations/__init__.py \
-    /app/src/apps/orders/migrations/__init__.py \
-    /app/src/apps/products/migrations/__init__.py \
-    /app/src/apps/cart/migrations/__init__.py \
-    /app/src/apps/inventory/migrations/__init__.py \
-    /app/src/apps/shipping/migrations/__init__.py \
-    /app/src/apps/payments/migrations/__init__.py \
-    /app/src/apps/reviews/migrations/__init__.py \
-    /app/src/apps/analytics/migrations/__init__.py
+    /app/src/apps/analytics/migrations
 
-# Copy entrypoint script
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+# Create __init__.py files in migrations directories
+RUN for dir in accounts orders products cart inventory shipping payments reviews analytics; do \
+        touch /app/src/apps/$dir/migrations/__init__.py; \
+    done
 
-# Copy application files
-COPY . .
+# Create log files
+RUN touch /app/logs/django.log /app/logs/celery.log
 
-# Fix permissions comprehensively
+# Fix ALL permissions in one go
 RUN chown -R django:django /app \
+    && chmod -R 755 /app \
     && chmod +x /app/manage.py \
-    && find /app -type d -name "migrations" -exec chown -R django:django {} \; \
-    && find /app -type d -name "migrations" -exec chmod -R 755 {} \; \
-    && find /app -name "*.py" -exec chmod 644 {} \; \
-    && chmod 755 /app/src /app/src/apps
+    && chmod -R 777 /app/logs \
+    && chmod -R 777 /app/src/apps/*/migrations \
+    && chmod 666 /app/logs/*.log
+
+# Verify permissions (for debugging)
+RUN echo "=== Checking permissions ===" \
+    && ls -la /app/src/apps/accounts/migrations/ \
+    && ls -la /app/logs/
 
 # Switch to non-root user
 USER django

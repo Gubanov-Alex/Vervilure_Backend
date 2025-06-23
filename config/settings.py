@@ -261,6 +261,8 @@ AUTHENTICATION_BACKENDS = [
     "allauth.account.auth_backends.AuthenticationBackend",
 ]
 
+AUTH_USER_MODEL = "accounts.User"
+
 # Django Allauth Configuration
 SITE_ID = 1
 

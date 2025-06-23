@@ -89,7 +89,7 @@ migrate: ## Run database migrations
 	@echo -e "$(YELLOW)Running migrations...$(NC)"
 	$(DC_EXEC) web $(POETRY) $(MANAGE) migrate
 
-.PHONY: makemigrations
+.PHONY:
 makemigrations: ## Create new migrations
 	$(DC_EXEC) web $(POETRY) $(MANAGE) makemigrations
 

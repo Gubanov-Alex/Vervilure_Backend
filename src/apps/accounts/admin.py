@@ -58,7 +58,6 @@ class UserAdmin(BaseUserAdmin):
     ]
 
     list_filter = [
-        "id",
         "is_active",
         "is_staff",
         "is_superuser",
@@ -66,11 +65,13 @@ class UserAdmin(BaseUserAdmin):
         "marketing_consent",
         "newsletter_subscription",
         "date_joined",
+        "last_login",
     ]
 
-    search_fields = ["ID", "email", "first_name", "last_name", "phone_number"]
+    search_fields = ["email", "first_name", "last_name", "phone_number"]
     ordering = ["-date_joined"]
     readonly_fields = [
+        "id",
         "date_joined",
         "last_login",
         "created_at",
@@ -89,6 +90,12 @@ class UserAdmin(BaseUserAdmin):
         return "No avatar"
 
     avatar_preview.short_description = "Avatar Preview"
+
+    def short_id(self, obj):
+        """Display short version of UUID for readability."""
+        return str(obj.id)[:8] + "..."
+
+    short_id.short_description = "Short ID"
 
     # def orders_count(self, obj):
     #     """Display count of user orders with link."""
@@ -126,6 +133,29 @@ class UserAdmin(BaseUserAdmin):
         self.message_user(request, f"Successfully deactivated {updated} user(s).")
 
     deactivate_users.short_description = "Deactivate selected users"
+
+    def get_search_results(self, request, queryset, search_term):
+        """Custom search that handles UUID searches."""
+        queryset, may_have_duplicates = super().get_search_results(request, queryset, search_term)
+        if search_term and len(search_term) >= 8:
+            try:
+                import uuid
+
+                if len(search_term) == 36:
+                    uuid_obj = uuid.UUID(search_term)
+                    uuid_queryset = self.model.objects.filter(id=uuid_obj)
+                elif len(search_term) >= 8:
+                    uuid_queryset = self.model.objects.filter(id__startswith=search_term)
+                else:
+                    uuid_queryset = self.model.objects.none()
+
+                queryset = queryset | uuid_queryset
+                may_have_duplicates = True
+
+            except (ValueError, TypeError):
+                pass
+
+        return queryset, may_have_duplicates
 
 
 class UserAddressInline(admin.TabularInline):

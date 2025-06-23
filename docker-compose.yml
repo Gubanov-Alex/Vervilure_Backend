@@ -86,24 +86,9 @@ services:
       - "127.0.0.1:8000:8000"
       - "127.0.0.1:5678:5678"
     volumes:
-      # ИЗМЕНЕНИЕ: Селективное монтирование вместо полного bind mount
-      # Монтируем только необходимые файлы для разработки
-      - ./src:/app/src:delegated
-      - ./config:/app/config:delegated
-      - ./manage.py:/app/manage.py:delegated
-      - ./pyproject.toml:/app/pyproject.toml:delegated
-      - ./poetry.lock:/app/poetry.lock:delegated
-
-      # Директории для записи используют Docker volumes
+      - .:/app:rw
       - logs_data:/app/logs
-      - media_data:/app/media
-      - static_data:/app/static
-      - staticfiles_data:/app/staticfiles
       - temp_data:/tmp/formatting
-
-      # ВАЖНО: НЕ монтируем migrations директории с хоста!
-      # Django будет создавать их внутри контейнера с правильными правами
-
     env_file:
       - .env.docker
     depends_on:
@@ -113,7 +98,7 @@ services:
         condition: service_healthy
       mailpit:
         condition: service_started
-    command: /entrypoint.sh python manage.py runserver 0.0.0.0:8000
+    command: python manage.py runserver 0.0.0.0:8000
     stdin_open: true
     tty: true
     restart: unless-stopped
@@ -137,16 +122,11 @@ services:
     environment:
       <<: *common-variables
       PYTHONPATH: "/app:/app/src"
-    command: /entrypoint.sh celery -A config worker --loglevel=info --concurrency=2
+    command: celery -A config worker --loglevel=info --concurrency=2
     volumes:
-      # Те же изменения для celery
-      - ./src:/app/src:delegated
-      - ./config:/app/config:delegated
-      - ./manage.py:/app/manage.py:delegated
-      - ./pyproject.toml:/app/pyproject.toml:delegated
-      - ./poetry.lock:/app/poetry.lock:delegated
+      - .:/app:rw
       - logs_data:/app/logs
-      - media_data:/app/media
+      - temp_data:/tmp/formatting
     env_file:
       - .env.docker
     depends_on:
@@ -175,15 +155,11 @@ services:
     environment:
       <<: *common-variables
       PYTHONPATH: "/app:/app/src"
-    command: /entrypoint.sh celery -A config beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    command: celery -A config beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
     volumes:
-      # Те же изменения для celery-beat
-      - ./src:/app/src:delegated
-      - ./config:/app/config:delegated
-      - ./manage.py:/app/manage.py:delegated
-      - ./pyproject.toml:/app/pyproject.toml:delegated
-      - ./poetry.lock:/app/poetry.lock:delegated
+      - .:/app:rw
       - logs_data:/app/logs
+      - temp_data:/tmp/formatting
     env_file:
       - .env.docker
     depends_on:
@@ -204,12 +180,6 @@ volumes:
   mailpit_data:
     driver: local
   logs_data:
-    driver: local
-  media_data:
-    driver: local
-  static_data:
-    driver: local
-  staticfiles_data:
     driver: local
   temp_data:
     driver: local

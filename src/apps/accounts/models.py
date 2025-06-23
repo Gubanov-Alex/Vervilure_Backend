@@ -47,14 +47,6 @@ class UserManager(BaseUserManager):
 class User(AbstractUser):
     """Extended user model with additional fields for e-commerce platform."""
 
-    # UUID primary key for better security and distribution
-    id = models.UUIDField(
-        primary_key=True,
-        default=uuid.uuid4,
-        editable=False,
-        verbose_name=_("ID"),
-        help_text=_("Unique identifier for the user")
-    )
     email_verification_token = models.UUIDField(default=uuid.uuid4, unique=True)
     email_verification_sent_at = models.DateTimeField(null=True, blank=True)
     is_email_verified = models.BooleanField(default=False)
