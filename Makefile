@@ -1,84 +1,36 @@
-.PHONY: help build up down restart logs shell migrate makemigrations test superuser env-docker env-local setup-docker clean reset-db lint format test-coverage debug init status collectstatic db-shell redis-cli tools tools-down info fix-docker reset-all debug-web debug-celery debug-all restart-services check-django
+# Vervilure Backend - Modern Makefile
+# =================================
 
-# Default target
-help:
-	@echo "Available commands:"
-	@echo "  build         - Build Docker images"
-	@echo "  up            - Start all services"
-	@echo "  down          - Stop all services"
-	@echo "  restart       - Restart all services"
-	@echo "  logs          - Show logs for all services"
-	@echo "  status        - Show services status"
-	@echo "  shell         - Open Django shell"
-	@echo "  migrate       - Run Django migrations"
-	@echo "  makemigrations- Create Django migrations"
-	@echo "  test          - Run tests"
-	@echo "  test-coverage - Run tests with coverage"
-	@echo "  superuser     - Create Django superuser"
-	@echo "  collectstatic - Collect static files"
-	@echo "  env-docker    - Switch to Docker environment"
-	@echo "  env-local     - Switch to local environment"
-	@echo "  setup-docker  - Complete Docker setup"
-	@echo "  clean         - Clean containers and volumes"
-	@echo "  reset-db      - Reset database"
-	@echo "  lint          - Run code linting"
-	@echo "  format        - Format code"
-	@echo "  db-shell      - Open PostgreSQL shell"
-	@echo "  redis-cli     - Open Redis CLI"
-	@echo "  tools         - Start development tools (pgAdmin, Redis Commander)"
-	@echo "  tools-down    - Stop development tools"
-	@echo "  debug         - Show PyCharm debugging setup"
-	@echo "  init          - Initialize project"
-	@echo "  info          - Show project info and status"
-	@echo "  fix-docker    - Fix common Docker build issues"
-	@echo "  reset-all     - Complete reset (nuclear option)"
-	@echo "  debug-web     - Show web container logs"
-	@echo "  debug-celery  - Show celery container logs"
-	@echo "  debug-all     - Show all container logs"
-	@echo "  restart-services - Restart failed services"
-	@echo "  check-django  - Check Django configuration"
+# Variables
+SHELL := /bin/bash
+.DEFAULT_GOAL := help
 
-# Docker commands
-build:
-	docker-compose build
+# Export user IDs for Docker
+export USER_ID := $(shell id -u)
+export GROUP_ID := $(shell id -g)
 
-up:
-	docker-compose up -d
-	@echo "Services started. Web available at http://localhost:8000"
+# Docker compose command with proper env
+DC := USER_ID=$(USER_ID) GROUP_ID=$(GROUP_ID) docker-compose
+DC_RUN := $(DC) run --rm
+DC_EXEC := $(DC) exec
 
-down:
-	docker-compose down
+# Python commands
+PYTHON := python
+MANAGE := $(PYTHON) manage.py
+POETRY := poetry run
 
-restart:
-	docker-compose restart
+# Colors for output
+YELLOW := \033[0;33m
+GREEN := \033[0;32m
+RED := \033[0;31m
+NC := \033[0m # No Color
 
-logs:
-	docker-compose logs -f
-
-# Status check
-status:
-	docker-compose ps
-
-# Django commands
-shell:
-	docker-compose exec web poetry run python manage.py shell
-
-migrate:
-	@echo "Running migrations..."
-	docker-compose exec web poetry run python manage.py migrate
-
-makemigrations:
-	docker-compose exec web poetry run python manage.py makemigrations
-
-test:
-	docker-compose exec web poetry run pytest -v
-
-superuser:
-	docker-compose exec web poetry run python manage.py createsuperuser
-
-collectstatic:
-	docker-compose exec web poetry run python manage.py collectstatic --noinput
-
+# Main targets
+.PHONY: help
+help: ## Show this help message
+	@echo -e "$(GREEN)Vervilure Backend - Docker Management$(NC)"
+	@echo -e "Current user: UID=$(USER_ID), GID=$(GROUP_ID)\n"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "$(YELLOW)%-20s$(NC) %s\n", $$1, $$2}'
 # Environment switching
 env-docker:
 	@echo "Switching to Docker environment..."
@@ -98,32 +50,92 @@ env-local:
 	@echo "Using .env.local for local development"
 	@echo "✓ Local environment configured"
 
-# Quick setup for Docker
-setup-docker:
-	@echo "Setting up Docker environment..."
-	$(MAKE) env-docker
-	$(MAKE) build
-	$(MAKE) up
-	@echo "Waiting for services to start..."
-	sleep 15
-	$(MAKE) migrate
-	@echo "Docker setup complete! Create superuser with 'make superuser'"
+# === DOCKER LIFECYCLE ===
+.PHONY: build
+build: ## Build Docker images
+	@echo -e "$(YELLOW)Building Docker images...$(NC)"
+	$(DC) build
 
-# Testing and Quality
-test-coverage:
-	docker-compose exec web poetry run pytest --cov=src --cov-report=html --cov-report=term
+.PHONY: up
+up: ## Start all core services
+	@echo -e "$(YELLOW)Starting services...$(NC)"
+	$(DC) up -d db redis web celery
+	@echo -e "$(GREEN)Services started!$(NC)"
+	@echo "  Web: http://localhost:8000"
+	@echo "  DB:  localhost:5490"
+	@echo "  Redis: localhost:6390"
 
+.PHONY: up-all
+up-all: ## Start all services including dev tools
+	$(DC) --profile dev --profile tools up -d
+	@echo -e "$(GREEN)All services started!$(NC)"
+	@make urls
 
-lint:
-	@echo "Running code linting..."
-	docker-compose exec web poetry run flake8 --max-line-length=120 . || true
-	docker-compose exec web poetry run mypy . || true
+.PHONY: down
+down: ## Stop all services
+	$(DC) down --remove-orphans
 
-format:
-	@echo "Formatting code..."
-	poetry run black .
-	poetry run isort .
+.PHONY: restart
+restart: down up ## Restart all services
 
+.PHONY: ps
+ps: ## Show running containers
+	$(DC) ps
+
+.PHONY: logs
+logs: ## Follow logs for all services
+	$(DC) logs -f --tail=100
+
+.PHONY: logs-%
+logs-%: ## Follow logs for specific service (e.g., make logs-web)
+	$(DC) logs -f --tail=100 $*
+
+# === DJANGO MANAGEMENT ===
+.PHONY: manage
+manage: ## Run Django manage.py command (e.g., make manage cmd="showmigrations")
+	$(DC_EXEC) web $(POETRY) $(MANAGE) $(cmd)
+
+.PHONY: shell
+shell: ## Open Django shell_plus
+	$(DC_EXEC) web $(POETRY) $(MANAGE) shell_plus || $(DC_EXEC) web $(POETRY) $(MANAGE) shell
+
+.PHONY: migrate
+migrate: ## Run database migrations
+	@echo -e "$(YELLOW)Running migrations...$(NC)"
+	$(DC_EXEC) web $(POETRY) $(MANAGE) migrate
+
+.PHONY: makemigrations
+makemigrations: ## Create new migrations
+	$(DC_EXEC) web $(POETRY) $(MANAGE) makemigrations
+
+.PHONY: showmigrations
+showmigrations: ## Show migration status
+	$(DC_EXEC) web $(POETRY) $(MANAGE) showmigrations
+
+.PHONY: createsuperuser
+createsuperuser: ## Create Django superuser
+	$(DC_EXEC) web $(POETRY) $(MANAGE) createsuperuser
+
+.PHONY: collectstatic
+collectstatic: ## Collect static files
+	$(DC_EXEC) web $(POETRY) $(MANAGE) collectstatic --noinput
+
+# === TESTING ===
+.PHONY: test
+test: ## Run all tests
+	$(DC_EXEC) web $(POETRY) pytest -v
+
+.PHONY: test-fast
+test-fast: ## Run tests without migrations
+	$(DC_EXEC) web $(POETRY) pytest -v --reuse-db --no-migrations
+
+.PHONY: test-coverage
+test-coverage: ## Run tests with coverage report
+	$(DC_EXEC) web $(POETRY) pytest --cov=. --cov-report=html --cov-report=term-missing
+
+.PHONY: test-file
+test-file: ## Run specific test file (e.g., make test-file path=apps/users/tests/test_models.py)
+	$(DC_EXEC) web $(POETRY) pytest -v $(path)
 # Google OAuth Management
 cleanup-oauth-duplicates:
 	@echo "Cleaning up duplicate Google OAuth configurations..."
@@ -168,150 +180,187 @@ test-google-oauth-quick:
 
 mailpit-logs:
 	docker-compose logs mailpit
+# === CODE QUALITY ===
+.PHONY: lint
+lint: ## Run all linters
+	@echo -e "$(YELLOW)Running linters...$(NC)"
+	$(DC_EXEC) web $(POETRY) ruff check .
+	$(DC_EXEC) web $(POETRY) mypy .
 
-# Complete testing setup
-setup-testing: setup-mailpit test-auth-flow
-	@echo "Testing environment ready!"
-	@echo "- Mailpit: http://localhost:8025"
-	@echo "- Django Admin: http://localhost:8000/admin/"
-	@echo "- Login: http://localhost:8000/auth/login/"
-	@echo "- Google OAuth: http://localhost:8000/auth/google/login/"
+.PHONY: format
+format: ## Format code with black and isort
+	$(DC_EXEC) web $(POETRY) black .
+	$(DC_EXEC) web $(POETRY) isort .
+	$(DC_EXEC) web $(POETRY) ruff check . --fix
 
-# Maintenance
-clean:
-	@echo "Cleaning up containers and volumes..."
-	docker-compose down -v
-	docker system prune -f
-	docker volume prune -f
+.PHONY: check
+check: ## Run all checks (tests, linting, etc.)
+	@make lint
+	@make test
 
-reset-db:
-	@echo "Resetting database..."
-	docker-compose down
-	docker volume rm $$(docker-compose config --services | head -1)_postgres_data 2>/dev/null || true
-	docker-compose up -d db
-	@echo "Waiting for database to start..."
-	sleep 10
-	$(MAKE) migrate
-	@echo "Database reset complete. Create superuser with 'make superuser'"
+# === DATABASE ===
+.PHONY: dbshell
+dbshell: ## Open PostgreSQL shell
+	$(DC_EXEC) db psql -U admin -d test_db
 
-# Development helpers
-db-shell:
-	docker-compose exec db psql -U admin -d test_db
-
-redis-cli:
-	docker-compose exec redis redis-cli
-
-# Development tools
-tools:
-	@echo "Starting development tools..."
-	docker-compose --profile tools up -d
-	@echo "Tools started:"
-	@echo "  pgAdmin: http://localhost:8080 (admin@vervilure.local / admin)"
-	@echo "  Redis Commander: http://localhost:8081"
-
-tools-down:
-	docker-compose --profile tools down
-
-# PyCharm specific
-debug:
-	@echo "PyCharm Remote Debugging Setup:"
-	@echo "1. Run → Edit Configurations → Python Remote Debug"
-	@echo "2. Host: localhost, Port: 5678"
-	@echo "3. Path mappings: /app → $(PWD)"
-	@echo "4. Add this to your code:"
-	@echo "   import pydevd_pycharm"
-	@echo "   pydevd_pycharm.settrace('host.docker.internal', port=5678)"
-
-# Environment setup
-init:
-	@echo "Initializing project with simplified environment configuration..."
-	@if [ ! -f .env.docker ] && [ ! -f .env.local ]; then \
-		echo "Creating both environment templates..."; \
-		$(MAKE) create-docker-env; \
-		$(MAKE) create-local-env; \
-		echo ""; \
-		echo "Environment files created:"; \
-		echo "  .env.docker - for Docker development"; \
-		echo "  .env.local  - for local development"; \
-		echo ""; \
-		echo "Edit the appropriate file for your setup, then run:"; \
-		echo "  make setup-docker  (for Docker development)"; \
-		echo "  make setup-local   (for local development)"; \
-	else \
-		echo "Environment files already exist:"; \
-		[ -f .env.docker ] && echo "  ✓ .env.docker"; \
-		[ -f .env.local ] && echo "  ✓ .env.local"; \
+.PHONY: dbreset
+dbreset: ## Reset database (WARNING: destroys all data!)
+	@echo -e "$(RED)WARNING: This will destroy all data!$(NC)"
+	@read -p "Are you sure? [y/N] " -n 1 -r; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		$(DC) down; \
+		docker volume rm vervilure_postgres_data 2>/dev/null || true; \
+		$(DC) up -d db; \
+		sleep 5; \
+		make migrate; \
+		echo -e "$(GREEN)Database reset complete$(NC)"; \
 	fi
 
-validate-env:
-	@echo "Validating environment configuration..."
-	@docker-compose run --rm web poetry run python manage.py check --deploy --settings=config.settings
-	@echo "✓ Environment configuration is valid"
-env-info:
-	@echo "Environment Information:"
-	@echo "======================="
-	@if [ -f .env.docker ]; then echo "Docker config: .env.docker exists"; else echo "Docker config: .env.docker missing"; fi
-	@if [ -f .env.local ]; then echo "Local config:  .env.local exists"; else echo "Local config:  .env.local missing"; fi
-	@echo ""
-	@echo "Current detection (when Django loads):"
-	@echo "  IS_LOCAL_DOCKER: DB_HOST contains 'db'"
-	@echo "  IS_CI: GITHUB_ACTIONS or ENVIRONMENT=ci"
-	@echo ""
-	@echo "File priority:"
-	@echo "  1. CI: GitHub Actions environment variables"
-	@echo "  2. Docker: .env.docker (when DB_HOST contains 'db')"
-	@echo "  3. Local: .env.local (when DB_HOST doesn't contain 'db')"
+.PHONY: dbbackup
+dbbackup: ## Create database backup
+	@mkdir -p backups
+	$(DC_EXEC) db pg_dump -U admin test_db | gzip > backups/backup_$$(date +%Y%m%d_%H%M%S).sql.gz
+	@echo -e "$(GREEN)Backup created in backups/$(NC)"
 
-# Quick fixes
-fix-docker:
-	@echo "Fixing Docker build issues..."
-	@if [ ! -f README.md ]; then echo "# Vervilure E-commerce Platform" > README.md; echo "Created README.md"; fi
-	@echo "Cleaning Docker cache..."
-	docker builder prune -f
-	@echo "Rebuilding..."
-	$(MAKE) build
+.PHONY: dbrestore
+dbrestore: ## Restore database from latest backup
+	@LATEST_BACKUP=$$(ls -t backups/*.sql.gz | head -1); \
+	if [ -z "$$LATEST_BACKUP" ]; then \
+		echo -e "$(RED)No backup found$(NC)"; \
+	else \
+		echo -e "$(YELLOW)Restoring from $$LATEST_BACKUP...$(NC)"; \
+		gunzip < $$LATEST_BACKUP | $(DC_EXEC) -T db psql -U admin test_db; \
+		echo -e "$(GREEN)Restore complete$(NC)"; \
+	fi
 
-# Debugging commands
-debug-web:
-	@echo "Web container logs:"
-	docker-compose logs web
+# === CELERY ===
+.PHONY: celery-logs
+celery-logs: ## Show Celery worker logs
+	$(DC) logs -f --tail=100 celery
 
-debug-celery:
-	@echo "Celery container logs:"
-	docker-compose logs celery
+.PHONY: flower
+flower: ## Start Flower (Celery monitoring)
+	$(DC) --profile monitoring up -d flower
+	@echo "Flower available at: http://localhost:5555"
 
-debug-all:
-	@echo "All container logs:"
-	docker-compose logs
+# === UTILITIES ===
+.PHONY: bash
+bash: ## Open bash shell in web container
+	$(DC_EXEC) web bash
 
-# Restart failed services
-restart-services:
-	@echo "Restarting failed services..."
-	docker-compose up -d web celery
+.PHONY: redis-cli
+redis-cli: ## Open Redis CLI
+	$(DC_EXEC) redis redis-cli
 
-# Check Django configuration
-check-django:
-	@echo "Checking Django configuration..."
-	docker-compose run --rm web poetry run python manage.py check
-
-# Reset everything
-reset-all:
-	@echo "Resetting entire Docker environment..."
-	docker-compose down -v
-	docker system prune -af
-	docker volume prune -f
-	$(MAKE) fix-docker
-	$(MAKE) setup-docker
-
-# Project info
-info:
-	@echo "Project: Vervilure E-commerce Platform"
-	@echo "Services status:"
-	@docker-compose ps
-	@echo ""
-	@echo "Available URLs:"
-	@echo "  Django: http://localhost:8000"
+.PHONY: urls
+urls: ## Show all service URLs
+	@echo -e "$(GREEN)Service URLs:$(NC)"
+	@echo "  Django:    http://localhost:8000"
+	@echo "  Django Admin: http://localhost:8000/admin/"
+	@if [ "$$($(DC) ps -q mailpit 2>/dev/null)" ]; then echo "  Mailpit:   http://localhost:8025"; fi
+	@if [ "$$($(DC) ps -q flower 2>/dev/null)" ]; then echo "  Flower:    http://localhost:5555"; fi
+	@if [ "$$($(DC) ps -q pgadmin 2>/dev/null)" ]; then echo "  pgAdmin:   http://localhost:5050"; fi
 	@echo "  PostgreSQL: localhost:5490"
-	@echo "  Redis: localhost:6379"
-test-django:
-	docker-compose exec web poetry run python manage.py test
+	@echo "  Redis:     localhost:6390"
+
+# === DEVELOPMENT TOOLS ===
+.PHONY: dev
+dev: ## Start development environment with all tools
+	$(DC) --profile dev --profile tools --profile monitoring up -d
+	@make urls
+
+.PHONY: tools
+tools: ## Start development tools (pgAdmin)
+	$(DC) --profile tools up -d
+	@echo "pgAdmin available at: http://localhost:5050"
+	@echo "Login: admin@vervilure.local / admin"
+
+# === MAINTENANCE ===
+.PHONY: clean
+clean: ## Clean up Docker resources
+	$(DC) down -v
+	docker system prune -f
+
+.PHONY: clean-all
+clean-all: ## Clean everything including images
+	$(DC) down -v --rmi all
+	docker system prune -af --volumes
+
+.PHONY: fix-permissions
+fix-permissions: ## Fix file permissions
+	@echo -e "$(YELLOW)Fixing permissions...$(NC)"
+	@sudo chown -R $(USER_ID):$(GROUP_ID) .
+	@find . -type d -exec chmod 755 {} \;
+	@find . -type f -exec chmod 644 {} \;
+	@chmod +x manage.py
+	@echo -e "$(GREEN)Permissions fixed$(NC)"
+
+# === QUICK COMMANDS ===
+.PHONY: dev-setup
+dev-setup: ## Complete development setup
+	@echo -e "$(YELLOW)Setting up development environment...$(NC)"
+	@make build
+	@make up
+	@sleep 5
+	@make migrate
+	@make collectstatic
+	@echo -e "$(GREEN)Setup complete! Create superuser with 'make createsuperuser'$(NC)"
+
+.PHONY: quickfix
+quickfix: ## Quick fix for common Docker issues
+	@echo -e "$(YELLOW)Running quick fixes...$(NC)"
+	@docker-compose down --remove-orphans || true
+	@docker network prune -f
+	@docker volume prune -f
+	@echo -e "$(GREEN)Quick fix complete$(NC)"
+
+# === PRODUCTION ===
+.PHONY: prod
+prod: ## Start production-like environment
+	$(DC) --profile production up -d
+	@echo "Nginx available at: http://localhost"
+
+.PHONY: deploy-check
+deploy-check: ## Run deployment readiness check
+	$(DC_EXEC) web $(POETRY) $(MANAGE) check --deploy
+	$(DC_EXEC) web $(POETRY) $(MANAGE) validate_templates
+	@echo -e "$(GREEN)Deployment checks passed$(NC)"
+
+# === MONITORING ===
+.PHONY: stats
+stats: ## Show container resource usage
+	docker stats --no-stream $$($(DC) ps -q)
+
+.PHONY: health
+health: ## Check health of all services
+	@echo -e "$(YELLOW)Checking service health...$(NC)"
+	@$(DC) ps | grep -E "(healthy|unhealthy)" || echo "All services running"
+
+# === SHORTCUTS ===
+.PHONY: m
+m: migrate ## Shortcut for migrate
+
+.PHONY: mm
+mm: makemigrations ## Shortcut for makemigrations
+
+.PHONY: c
+c: createsuperuser ## Shortcut for createsuperuser
+
+.PHONY: s
+s: shell ## Shortcut for shell
+
+.PHONY: t
+t: test ## Shortcut for test
+
+.PHONY: l
+l: logs ## Shortcut for logs
+
+# === CI/CD ===
+.PHONY: ci-test
+ci-test: ## Run tests in CI mode
+	$(DC_RUN) -e CI=true web $(POETRY) pytest -v --no-migrations
+
+.PHONY: ci-lint
+ci-lint: ## Run linting in CI mode
+	$(DC_RUN) web $(POETRY) ruff check . --exit-non-zero-on-fix
+	$(DC_RUN) web $(POETRY) mypy . --strict

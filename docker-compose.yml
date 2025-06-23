@@ -1,67 +1,95 @@
 version: '3.8'
 
+x-common-variables: &common-variables
+  TZ: Europe/Kiev
+  LANG: C.UTF-8
+
 services:
   db:
     image: postgres:15-alpine
     container_name: vervilure_db
+    # Remove user setting for PostgreSQL - it needs to run as postgres user
     environment:
+      <<: *common-variables
       POSTGRES_DB: test_db
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: admin_password
+      PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5490:5432"  # External port 5490 -> internal 5432
+      - "127.0.0.1:5490:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U admin -d test_db"]
       interval: 30s
       timeout: 10s
-      retries: 5
+      retries: 3
+      start_period: 40s
     restart: unless-stopped
+    networks:
+      - backend
 
   redis:
     image: redis:7-alpine
     container_name: vervilure_redis
+    # Remove user setting for Redis - it needs proper permissions
+    environment:
+      <<: *common-variables
     ports:
-      - "6390:6379"  # External port 6390 -> internal 6379
+      - "127.0.0.1:6390:6379"
     volumes:
       - redis_data:/data
+    command: redis-server --appendonly yes --save 60 1000
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 30s
       timeout: 10s
-      retries: 5
+      retries: 3
+      start_period: 20s
+    networks:
+      - backend
 
   mailpit:
     image: axllent/mailpit:latest
     container_name: vervilure_mailpit
+    user: "${USER_ID:-1000}:${GROUP_ID:-1000}"
     restart: unless-stopped
     volumes:
       - mailpit_data:/data
     ports:
-      - "8025:8025"  # Web UI
-      - "1025:1025"  # SMTP
+      - "127.0.0.1:8025:8025"
+      - "127.0.0.1:1025:1025"
     environment:
+      <<: *common-variables
       MP_MAX_MESSAGES: 5000
       MP_DATABASE: /data/mailpit.db
       MP_SMTP_AUTH_ACCEPT_ANY: 1
       MP_SMTP_AUTH_ALLOW_INSECURE: 1
-      MP_VERBOSE: 0
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8025/api/v1/info"]
       interval: 30s
       timeout: 10s
-      retries: 5
+      retries: 3
+      start_period: 20s
+    networks:
+      - backend
 
   web:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        USER_ID: ${USER_ID:-1000}
+        GROUP_ID: ${GROUP_ID:-1000}
     container_name: vervilure_web
+    environment:
+      <<: *common-variables
     ports:
-      - "8000:8000"
-      - "5678:5678"
+      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:5678:5678"
     volumes:
-      - .:/app
+      - .:/app:delegated
       - logs_data:/app/logs
       - media_data:/app/media
     env_file:
@@ -72,18 +100,33 @@ services:
       redis:
         condition: service_healthy
       mailpit:
-        condition: service_healthy
-    command: python manage.py runserver 0.0.0.0:8000
+        condition: service_started
+    command: /entrypoint.sh python manage.py runserver 0.0.0.0:8000
     stdin_open: true
     tty: true
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - backend
 
   celery:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        USER_ID: ${USER_ID:-1000}
+        GROUP_ID: ${GROUP_ID:-1000}
     container_name: vervilure_celery
-    command: celery -A config worker --loglevel=info --concurrency=2
+    environment:
+      <<: *common-variables
+    command: /entrypoint.sh celery -A config worker --loglevel=info --concurrency=2
     volumes:
-      - .:/app
+      - .:/app:delegated
       - logs_data:/app/logs
     env_file:
       - .env.docker
@@ -93,15 +136,29 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "celery", "-A", "config", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - backend
 
-  # Optional: Celery Beat for scheduled tasks
   celery-beat:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        USER_ID: ${USER_ID:-1000}
+        GROUP_ID: ${GROUP_ID:-1000}
     container_name: vervilure_celery_beat
-    command: celery -A config beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    environment:
+      <<: *common-variables
+    command: /entrypoint.sh celery -A config beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
     volumes:
-      - .:/app
-      - ./logs:/app/logs
+      - .:/app:delegated
+      - logs_data:/app/logs
     env_file:
       - .env.docker
     depends_on:
@@ -110,16 +167,23 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
-    profiles: ["beat"]  # Optional service, start with --profile beat
+    profiles: ["beat"]
+    networks:
+      - backend
 
 volumes:
   postgres_data:
+    driver: local
   redis_data:
+    driver: local
   mailpit_data:
+    driver: local
   logs_data:
+    driver: local
   media_data:
+    driver: local
 
 networks:
-  default:
+  backend:
     name: vervilure_network
-
+    driver: bridge
