@@ -53,7 +53,6 @@ services:
   mailpit:
     image: axllent/mailpit:latest
     container_name: vervilure_mailpit
-    user: "${USER_ID:-1000}:${GROUP_ID:-1000}"
     restart: unless-stopped
     volumes:
       - mailpit_data:/data
@@ -67,7 +66,7 @@ services:
       MP_SMTP_AUTH_ACCEPT_ANY: 1
       MP_SMTP_AUTH_ALLOW_INSECURE: 1
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8025/api/v1/info"]
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8025/api/v1/info" ]
       interval: 30s
       timeout: 10s
       retries: 3
