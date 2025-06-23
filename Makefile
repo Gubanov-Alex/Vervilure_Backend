@@ -28,10 +28,18 @@ NC := \033[0m # No Color
 
 # Main targets
 .PHONY: help
-help: ## Show this help message
+help: ## Show this help message with sections
 	@echo -e "$(GREEN)Vervilure Backend - Docker Management$(NC)"
 	@echo -e "Current user: UID=$(USER_ID), GID=$(GROUP_ID)\n"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "$(YELLOW)%-20s$(NC) %s\n", $$1, $$2}'
+	@echo -e "$(BLUE)DOCKER LIFECYCLE:$(NC)"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E "(build|up|down|restart|ps)" | awk 'BEGIN {FS = ":.*?## "}; {printf "$(YELLOW)%-20s$(NC) %s\n", $$1, $$2}'
+	@echo -e "\n$(BLUE)DJANGO MANAGEMENT:$(NC)"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E "(manage|shell|migrate|test)" | awk 'BEGIN {FS = ":.*?## "}; {printf "$(YELLOW)%-20s$(NC) %s\n", $$1, $$2}'
+	@echo -e "\n$(BLUE)ENVIRONMENT & MONITORING:$(NC)"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E "(env-|health|monitor|watch)" | awk 'BEGIN {FS = ":.*?## "}; {printf "$(YELLOW)%-20s$(NC) %s\n", $$1, $$2}'
+	@echo -e "\n$(BLUE)UTILITIES:$(NC)"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E "(clean|fix|reset|urls)" | awk 'BEGIN {FS = ":.*?## "}; {printf "$(YELLOW)%-20s$(NC) %s\n", $$1, $$2}'
+
 
 # === DOCKER LIFECYCLE ===
 .PHONY: build
@@ -115,48 +123,17 @@ test-file: ## Run specific test file (e.g., make test-file path=apps/users/tests
 	$(DC_EXEC) web $(POETRY) pytest -v $(path)
 
 # === CODE QUALITY ===
-.PHONY: setup-format-env
-setup-format-env: ## Setup formatting environment with proper permissions
-	@echo -e "$(YELLOW)Setting up formatting environment...$(NC)"
-	@$(DC_EXEC) web bash -c " \
-		rm -rf /app/.ruff_cache && \
-		mkdir -p /tmp/ruff_cache && \
-		chmod 777 /tmp/ruff_cache && \
-		mkdir -p /app/.ruff_cache && \
-		chown django:django /app/.ruff_cache && \
-		chmod 755 /app/.ruff_cache \
-	"
-
-.PHONY: lint
-lint: ## Run all linters
-	@echo -e "$(YELLOW)Running linters...$(NC)"
-	@echo -e "$(BLUE)Running ruff...$(NC)"
-	$(DC_EXEC) web $(POETRY) ruff check . --cache-dir /tmp/ruff_cache
-	@echo -e "$(BLUE)Running mypy...$(NC)"
-	$(DC_EXEC) web $(POETRY) mypy .
-	@echo -e "$(GREEN)Linting complete!$(NC)"
-
-.PHONY: lint-fix
-lint-fix: ## Run linters with auto-fix
-	@echo -e "$(YELLOW)Running linters with fixes...$(NC)"
-	@$(MAKE) setup-format-env
-	$(DC_EXEC) web $(POETRY) ruff check . --fix --cache-dir /tmp/ruff_cache
-	$(DC_EXEC) web $(POETRY) mypy .
-
 .PHONY: format
 format:
 	@echo "Formatting code..."
 	poetry run black .
 	poetry run isort .
 
-
-
 .PHONY: format-check
 format-check: ## Check if code is properly formatted
 	@echo -e "$(YELLOW)Checking code formatting...$(NC)"
 	$(DC_EXEC) web $(POETRY) black --check .
 	$(DC_EXEC) web $(POETRY) isort --check-only .
-
 
 .PHONY: check
 check: ## Run all checks (tests, linting, etc.)
@@ -272,16 +249,6 @@ urls: ## Show all service URLs
 	@echo "  PostgreSQL: localhost:5490"
 	@echo "  Redis:     localhost:6390"
 
-.PHONY: fix-permissions
-fix-permissions: ## Fix file permissions
-	@echo -e "$(YELLOW)Fixing permissions...$(NC)"
-	sudo chown -R $(USER_ID):$(GROUP_ID) .
-	find . -type d -exec chmod 755 {} \;
-	find . -type f -exec chmod 644 {} \;
-	chmod +x manage.py
-	rm -rf .ruff_cache
-	@echo -e "$(GREEN)Permissions fixed$(NC)"
-
 .PHONY: clean
 clean: ## Clean up Docker resources
 	$(DC) down -v
@@ -311,6 +278,99 @@ install-deps: ## Install/update Poetry dependencies
 	@echo -e "$(YELLOW)Installing dependencies...$(NC)"
 	$(DC_EXEC) web poetry install
 	@echo -e "$(GREEN)Dependencies installed!$(NC)"
+
+# === ENVIRONMENT DIAGNOSTICS ===
+.PHONY: env-check
+env-check: ## Check environment status and configuration
+	@echo -e "$(GREEN)Environment Status Check$(NC)"
+	@echo -e "$(YELLOW)Docker Services:$(NC)"
+	@$(DC) ps --format 'table {{.Service}}\t{{.Status}}\t{{.Ports}}'
+	@echo -e "\n$(YELLOW)Python Environment:$(NC)"
+	@$(DC_EXEC) web python --version
+	@$(DC_EXEC) web poetry --version
+	@echo -e "\n$(YELLOW)Database Connection:$(NC)"
+	@$(DC_EXEC) web $(POETRY) python -c "import django; django.setup(); from django.db import connection; connection.ensure_connection(); print('✅ Database connected')" 2>/dev/null || echo "❌ Database connection failed"
+	@echo -e "\n$(YELLOW)Redis Connection:$(NC)"
+	@$(DC_EXEC) redis redis-cli ping 2>/dev/null || echo "❌ Redis connection failed"
+
+.PHONY: env-info
+env-info: ## Show detailed environment information
+	@echo -e "$(GREEN)Detailed Environment Information$(NC)"
+	@echo -e "$(YELLOW)System Info:$(NC)"
+	@echo "User: $(USER_ID):$(GROUP_ID)"
+	@echo "Shell: $(SHELL)"
+	@echo "Working directory: $(PWD)"
+	@echo -e "\n$(YELLOW)Container Environment:$(NC)"
+	@$(DC_EXEC) web env | grep -E "(DJANGO|DB_|REDIS|CELERY|POETRY)" | sort
+	@echo -e "\n$(YELLOW)Poetry Configuration:$(NC)"
+	@$(DC_EXEC) web poetry config --list
+	@echo -e "\n$(YELLOW)Installed Packages (top 10):$(NC)"
+	@$(DC_EXEC) web poetry show | head -10
+
+.PHONY: health-check
+health-check: ## Run comprehensive health check
+	@echo -e "$(GREEN)Running Health Checks$(NC)"
+	@echo -e "$(YELLOW)Services Status:$(NC)"
+	@for service in web db redis mailpit; do \
+		if [ "$$($(DC) ps -q $$service 2>/dev/null)" ]; then \
+			echo "✅ $$service - running"; \
+		else \
+			echo "❌ $$service - not running"; \
+		fi; \
+	done
+	@echo -e "\n$(YELLOW)Application Health:$(NC)"
+	@curl -s http://localhost:8000/health/ >/dev/null && echo "✅ Django - healthy" || echo "❌ Django - unhealthy"
+	@curl -s http://localhost:8025/api/v1/info >/dev/null && echo "✅ Mailpit - healthy" || echo "❌ Mailpit - unhealthy"
+
+.PHONY: dev-shell
+dev-shell: ## Open interactive development shell
+	@echo -e "$(GREEN)Opening development shell...$(NC)"
+	@echo "Available commands: python, django-admin, poetry, pytest, manage.py"
+	@echo "Type 'exit' to return to host shell"
+	@$(DC_EXEC) web bash
+
+.PHONY: quick-test
+quick-test: ## Run quick smoke tests
+	@echo -e "$(YELLOW)Running quick smoke tests...$(NC)"
+	@$(DC_EXEC) web $(POETRY) python -c "import django; print('✅ Django import')"
+	@$(DC_EXEC) web $(POETRY) python manage.py check --deploy --quiet && echo "✅ Django deployment check"
+	@$(DC_EXEC) web $(POETRY) python -c "from django.conf import settings; print(f'✅ Debug mode: {settings.DEBUG}')"
+
+.PHONY: reset-cache
+reset-cache: ## Reset all caches (Python, Poetry, Docker)
+	@echo -e "$(YELLOW)Resetting all caches...$(NC)"
+	@$(DC_EXEC) web find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	@$(DC_EXEC) web find . -name "*.pyc" -delete 2>/dev/null || true
+	@docker system prune -f
+	@echo -e "$(GREEN)Caches cleared$(NC)"
+
+.PHONY: deps-check
+deps-check: ## Check for dependency issues
+	@echo -e "$(YELLOW)Checking dependencies...$(NC)"
+	@$(DC_EXEC) web $(POETRY) check
+	@$(DC_EXEC) web $(POETRY) show --outdated | head -10 || echo "All packages up to date"
+
+# === PRODUCTION READINESS ===
+.PHONY: prod-check
+prod-check: ## Check production readiness
+	@echo -e "$(GREEN)Production Readiness Check$(NC)"
+	@$(DC_EXEC) web $(POETRY) python manage.py check --deploy
+	@$(DC_EXEC) web $(POETRY) python manage.py makemigrations --dry-run --check
+	@echo -e "$(GREEN)Production checks complete$(NC)"
+
+# === MONITORING ===
+.PHONY: watch-logs
+watch-logs: ## Watch logs with filtering
+	@echo -e "$(YELLOW)Watching logs (Ctrl+C to stop)...$(NC)"
+	@$(DC) logs -f --tail=50 | grep -E "(ERROR|WARNING|INFO|DEBUG)" --color=always
+
+.PHONY: monitor
+monitor: ## Monitor system resources
+	@echo -e "$(GREEN)System Monitoring$(NC)"
+	@echo -e "$(YELLOW)Container Stats:$(NC)"
+	@docker stats --no-stream $$($(DC) ps -q) 2>/dev/null || echo "No running containers"
+	@echo -e "\n$(YELLOW)Disk Usage:$(NC)"
+	@docker system df
 
 # === SHORTCUTS ===
 .PHONY: m
