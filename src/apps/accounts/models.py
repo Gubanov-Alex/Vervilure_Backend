@@ -270,6 +270,18 @@ class User(AbstractUser):
         self.deactivation_reason = ""
         self.save(update_fields=["is_active", "deactivated_at", "deactivation_reason"])
 
+    def regenerate_verification_token(self) -> uuid.UUID:
+        """
+        Regenerate email verification token and update timestamp.
+
+        Returns:
+            UUID: New verification token
+        """
+        self.email_verification_token = uuid.uuid4()
+        self.email_verification_sent_at = timezone.now()
+        self.save(update_fields=["email_verification_token", "email_verification_sent_at"])
+        return self.email_verification_token
+
     def export_user_data(self) -> Dict[str, Any]:
         """
         Export user data for GDPR compliance.
