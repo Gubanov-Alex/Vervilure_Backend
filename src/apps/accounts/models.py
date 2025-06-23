@@ -5,7 +5,6 @@ from django.contrib.auth.base_user import BaseUserManager
 from django.contrib.auth.models import AbstractUser
 from django.core.validators import RegexValidator
 from django.db import models
-from django.db.models import Max
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -53,27 +52,19 @@ class User(AbstractUser):
 
     # Account deletion/deactivation fields
     deactivated_at = models.DateTimeField(
-        _("deactivated at"),
-        null=True,
-        blank=True,
-        help_text=_("Timestamp when account was deactivated (soft delete)")
+        _("deactivated at"), null=True, blank=True, help_text=_("Timestamp when account was deactivated (soft delete)")
     )
     deactivation_reason = models.TextField(
         _("deactivation reason"),
         max_length=500,
         blank=True,
-        help_text=_("Reason provided by user for account deactivation")
+        help_text=_("Reason provided by user for account deactivation"),
     )
     is_anonymized = models.BooleanField(
-        _("is anonymized"),
-        default=False,
-        help_text=_("Whether user data has been anonymized")
+        _("is anonymized"), default=False, help_text=_("Whether user data has been anonymized")
     )
     anonymized_at = models.DateTimeField(
-        _("anonymized at"),
-        null=True,
-        blank=True,
-        help_text=_("Timestamp when account was anonymized")
+        _("anonymized at"), null=True, blank=True, help_text=_("Timestamp when account was anonymized")
     )
 
     def is_verification_token_valid(self) -> bool:
@@ -87,6 +78,62 @@ class User(AbstractUser):
         self.email_verification_token = uuid.uuid4()
         self.email_verification_sent_at = timezone.now()
         self.save(update_fields=["email_verification_token", "email_verification_sent_at"])
+
+    def can_reactivate(self) -> bool:
+        """Check if user can reactivate their account (within 30 days of deactivation)."""
+        if not self.deactivated_at:
+            return False
+
+        # Check if within 30-day reactivation window
+        reactivation_deadline = self.deactivated_at + timedelta(days=30)
+        return timezone.now() <= reactivation_deadline
+
+    def get_reactivation_deadline(self):
+        """Get the deadline for account reactivation."""
+        if not self.deactivated_at:
+            return None
+
+        return self.deactivated_at + timedelta(days=30)
+
+    def anonymize_user_data(self) -> str:
+        """Anonymize user data while preserving essential statistics."""
+        from django.utils.crypto import get_random_string
+
+        # Generate anonymous identifier
+        anonymous_id = f"deleted_user_{get_random_string(12)}"
+
+        # Anonymize personal data
+        self.email = f"{anonymous_id}@deleted.local"
+        self.first_name = "Deleted"
+        self.last_name = "User"
+        self.phone_number = None
+        self.date_of_birth = None
+        self.avatar = None
+        self.last_login_ip = None
+        self.google_id = None
+
+        # Mark as anonymized
+        self.is_active = False
+        self.is_anonymized = True
+        self.anonymized_at = timezone.now()
+
+        # Clear verification tokens
+        self.email_verification_token = uuid.uuid4()
+        self.email_verification_sent_at = None
+        self.is_email_verified = False
+
+        # Clear marketing preferences
+        self.marketing_consent = False
+        self.newsletter_subscription = False
+
+        self.save()
+
+        # Clean up related data
+        from .models import UserAddress
+
+        UserAddress.objects.filter(user=self).delete()
+
+        return anonymous_id
 
     username = None  # Remove the username field
     email = models.EmailField(_("email address"), unique=True)
@@ -139,9 +186,17 @@ class User(AbstractUser):
             models.Index(fields=["google_id"]),
             models.Index(fields=["email_verification_token"]),
             # Indexes for deletion/anonymization fields
-            models.Index(fields=["deactivated_at"], condition=models.Q(deactivated_at__isnull=False)),
-            models.Index(fields=["anonymized_at"], condition=models.Q(anonymized_at__isnull=False)),
-            models.Index(fields=["is_anonymized"], condition=models.Q(is_anonymized=True)),
+            models.Index(
+                fields=["deactivated_at"],
+                condition=models.Q(deactivated_at__isnull=False),
+                name="user_deactivated_at_idx",
+            ),
+            models.Index(
+                fields=["anonymized_at"], condition=models.Q(anonymized_at__isnull=False), name="user_anonymized_at_idx"
+            ),
+            models.Index(
+                fields=["is_anonymized"], condition=models.Q(is_anonymized=True), name="user_is_anonymized_idx"
+            ),
             models.Index(fields=["is_active", "deactivated_at"]),
         ]
 

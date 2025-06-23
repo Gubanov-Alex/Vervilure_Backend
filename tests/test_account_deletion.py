@@ -1,11 +1,12 @@
 # Comprehensive tests for account deletion functionality
 
-import pytest
 from datetime import timedelta
 from unittest.mock import patch
 
 from django.urls import reverse
 from django.utils import timezone
+
+import pytest
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -19,10 +20,7 @@ class TestUserModelDeletionFields:
     def test_user_creation_with_deletion_fields(self):
         """Test user creation includes deletion fields with defaults."""
         user = User.objects.create_user(
-            email="test@example.com",
-            password="testpass123",
-            first_name="Test",
-            last_name="User"
+            email="test@example.com", password="testpass123", first_name="Test", last_name="User"
         )
 
         assert user.deactivated_at is None
@@ -34,10 +32,7 @@ class TestUserModelDeletionFields:
     def test_can_reactivate_method(self):
         """Test can_reactivate method logic."""
         user = User.objects.create_user(
-            email="test@example.com",
-            password="testpass123",
-            first_name="Test",
-            last_name="User"
+            email="test@example.com", password="testpass123", first_name="Test", last_name="User"
         )
 
         # Active user cannot be reactivated
@@ -54,10 +49,7 @@ class TestUserModelDeletionFields:
     def test_get_reactivation_deadline(self):
         """Test reactivation deadline calculation."""
         user = User.objects.create_user(
-            email="test@example.com",
-            password="testpass123",
-            first_name="Test",
-            last_name="User"
+            email="test@example.com", password="testpass123", first_name="Test", last_name="User"
         )
 
         # No deadline for active user
@@ -75,10 +67,7 @@ class TestUserModelDeletionFields:
     def test_anonymize_user_data_method(self):
         """Test user data anonymization method."""
         user = User.objects.create_user(
-            email="test@example.com",
-            password="testpass123",
-            first_name="John",
-            last_name="Doe"
+            email="test@example.com", password="testpass123", first_name="John", last_name="Doe"
         )
 
         original_id = user.id
@@ -99,10 +88,7 @@ class TestUserModelDeletionFields:
     def test_user_str_representation_when_anonymized(self):
         """Test user string representation for anonymized users."""
         user = User.objects.create_user(
-            email="test@example.com",
-            password="testpass123",
-            first_name="John",
-            last_name="Doe"
+            email="test@example.com", password="testpass123", first_name="John", last_name="Doe"
         )
 
         # Normal user
@@ -119,10 +105,7 @@ class TestUserModelDeletionFields:
     def test_full_name_property_when_anonymized(self):
         """Test full_name property for anonymized users."""
         user = User.objects.create_user(
-            email="test@example.com",
-            password="testpass123",
-            first_name="John",
-            last_name="Doe"
+            email="test@example.com", password="testpass123", first_name="John", last_name="Doe"
         )
 
         assert user.full_name == "John Doe"
@@ -137,28 +120,20 @@ class TestAccountDeletionAPI(APITestCase):
     def setUp(self):
         """Set up test data."""
         self.user = User.objects.create_user(
-            email="test@example.com",
-            password="testpass123",
-            first_name="John",
-            last_name="Doe"
+            email="test@example.com", password="testpass123", first_name="John", last_name="Doe"
         )
-        self.delete_url = reverse('authviewset-delete-account')
+        self.delete_url = reverse("authviewset-delete-account")
 
     def test_delete_account_requires_authentication(self):
         """Test that delete account requires authentication."""
-        response = self.client.delete(self.delete_url, {
-            "password": "testpass123",
-            "deletion_type": "soft"
-        })
+        response = self.client.delete(self.delete_url, {"password": "testpass123", "deletion_type": "soft"})
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
     def test_delete_account_requires_password(self):
         """Test that password confirmation is required."""
         self.client.force_authenticate(user=self.user)
 
-        response = self.client.delete(self.delete_url, {
-            "deletion_type": "soft"
-        })
+        response = self.client.delete(self.delete_url, {"deletion_type": "soft"})
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "Password confirmation is required" in response.data["error"]
@@ -167,10 +142,7 @@ class TestAccountDeletionAPI(APITestCase):
         """Test deletion with invalid password."""
         self.client.force_authenticate(user=self.user)
 
-        response = self.client.delete(self.delete_url, {
-            "password": "wrongpassword",
-            "deletion_type": "soft"
-        })
+        response = self.client.delete(self.delete_url, {"password": "wrongpassword", "deletion_type": "soft"})
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "Invalid password confirmation" in response.data["error"]
@@ -179,10 +151,7 @@ class TestAccountDeletionAPI(APITestCase):
         """Test deletion with invalid deletion type."""
         self.client.force_authenticate(user=self.user)
 
-        response = self.client.delete(self.delete_url, {
-            "password": "testpass123",
-            "deletion_type": "invalid"
-        })
+        response = self.client.delete(self.delete_url, {"password": "testpass123", "deletion_type": "invalid"})
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "Invalid deletion type" in response.data["error"]
@@ -191,11 +160,9 @@ class TestAccountDeletionAPI(APITestCase):
         """Test soft delete functionality."""
         self.client.force_authenticate(user=self.user)
 
-        response = self.client.delete(self.delete_url, {
-            "password": "testpass123",
-            "deletion_type": "soft",
-            "reason": "Test reason"
-        })
+        response = self.client.delete(
+            self.delete_url, {"password": "testpass123", "deletion_type": "soft", "reason": "Test reason"}
+        )
 
         assert response.status_code == status.HTTP_200_OK
         assert "Account has been deactivated" in response.data["message"]
@@ -218,15 +185,12 @@ class TestAccountDeletionAPI(APITestCase):
             last_name="Doe",
             address_line1="123 Test St",
             city="Test City",
-            country="US"
+            country="US",
         )
 
         self.client.force_authenticate(user=self.user)
 
-        response = self.client.delete(self.delete_url, {
-            "password": "testpass123",
-            "deletion_type": "anonymize"
-        })
+        response = self.client.delete(self.delete_url, {"password": "testpass123", "deletion_type": "anonymize"})
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
 
@@ -252,16 +216,13 @@ class TestAccountDeletionAPI(APITestCase):
             last_name="Doe",
             address_line1="123 Test St",
             city="Test City",
-            country="US"
+            country="US",
         )
 
         user_id = self.user.id
         self.client.force_authenticate(user=self.user)
 
-        response = self.client.delete(self.delete_url, {
-            "password": "testpass123",
-            "deletion_type": "hard"
-        })
+        response = self.client.delete(self.delete_url, {"password": "testpass123", "deletion_type": "hard"})
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
 
@@ -269,16 +230,14 @@ class TestAccountDeletionAPI(APITestCase):
         assert not User.objects.filter(id=user_id).exists()
         assert UserAddress.objects.filter(user_id=user_id).count() == 0
 
-    @patch('src.apps.accounts.views.logger')
+    @patch("src.apps.accounts.views.logger")
     def test_delete_account_logging(self, mock_logger):
         """Test that account deletion is properly logged."""
         self.client.force_authenticate(user=self.user)
 
-        response = self.client.delete(self.delete_url, {
-            "password": "testpass123",
-            "deletion_type": "soft",
-            "reason": "Test reason"
-        })
+        response = self.client.delete(
+            self.delete_url, {"password": "testpass123", "deletion_type": "soft", "reason": "Test reason"}
+        )
 
         assert response.status_code == status.HTTP_200_OK
 
@@ -288,27 +247,25 @@ class TestAccountDeletionAPI(APITestCase):
         assert "Account deactivated (soft delete)" in log_call[0][0]
 
         # Check log extra data
-        log_extra = log_call[1]['extra']
-        assert log_extra['user_id'] == self.user.id
-        assert log_extra['deletion_type'] == 'soft'
-        assert log_extra['reason'] == 'Test reason'
-        assert log_extra['action'] == 'account_soft_delete'
+        log_extra = log_call[1]["extra"]
+        assert log_extra["user_id"] == self.user.id
+        assert log_extra["deletion_type"] == "soft"
+        assert log_extra["reason"] == "Test reason"
+        assert log_extra["action"] == "account_soft_delete"
 
     def test_delete_account_with_data_export_request(self):
         """Test account deletion with data export request."""
         self.client.force_authenticate(user=self.user)
 
-        response = self.client.delete(self.delete_url, {
-            "password": "testpass123",
-            "deletion_type": "soft",
-            "export_data": True
-        })
+        response = self.client.delete(
+            self.delete_url, {"password": "testpass123", "deletion_type": "soft", "export_data": True}
+        )
 
         assert response.status_code == status.HTTP_200_OK
         # In real implementation, this would trigger async task
         # Here we just verify the request was processed
 
-    @patch('src.apps.accounts.views.transaction')
+    @patch("src.apps.accounts.views.transaction")
     def test_delete_account_transaction_rollback_on_error(self, mock_transaction):
         """Test that database transaction is rolled back on error."""
         # Mock atomic context manager to raise exception
@@ -316,10 +273,7 @@ class TestAccountDeletionAPI(APITestCase):
 
         self.client.force_authenticate(user=self.user)
 
-        response = self.client.delete(self.delete_url, {
-            "password": "testpass123",
-            "deletion_type": "soft"
-        })
+        response = self.client.delete(self.delete_url, {"password": "testpass123", "deletion_type": "soft"})
 
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
         assert "Account deletion failed" in response.data["error"]
@@ -338,10 +292,7 @@ class TestUserManagerMethods:
         """Test active_users queryset method."""
         # Create various user states
         active_user = User.objects.create_user(
-            email="active@example.com",
-            password="test123",
-            first_name="Active",
-            last_name="User"
+            email="active@example.com", password="test123", first_name="Active", last_name="User"
         )
 
         deactivated_user = User.objects.create_user(
@@ -349,16 +300,13 @@ class TestUserManagerMethods:
             password="test123",
             first_name="Deactivated",
             last_name="User",
-            is_active=False
+            is_active=False,
         )
         deactivated_user.deactivated_at = timezone.now()
         deactivated_user.save()
 
         anonymized_user = User.objects.create_user(
-            email="anonymized@example.com",
-            password="test123",
-            first_name="Anonymized",
-            last_name="User"
+            email="anonymized@example.com", password="test123", first_name="Anonymized", last_name="User"
         )
         anonymized_user.anonymize_user_data()
 
@@ -371,10 +319,7 @@ class TestUserManagerMethods:
     def test_deactivated_users_queryset(self):
         """Test deactivated_users queryset method."""
         active_user = User.objects.create_user(
-            email="active@example.com",
-            password="test123",
-            first_name="Active",
-            last_name="User"
+            email="active@example.com", password="test123", first_name="Active", last_name="User"
         )
 
         deactivated_user = User.objects.create_user(
@@ -382,7 +327,7 @@ class TestUserManagerMethods:
             password="test123",
             first_name="Deactivated",
             last_name="User",
-            is_active=False
+            is_active=False,
         )
         deactivated_user.deactivated_at = timezone.now()
         deactivated_user.save()
@@ -394,17 +339,11 @@ class TestUserManagerMethods:
     def test_anonymized_users_queryset(self):
         """Test anonymized_users queryset method."""
         normal_user = User.objects.create_user(
-            email="normal@example.com",
-            password="test123",
-            first_name="Normal",
-            last_name="User"
+            email="normal@example.com", password="test123", first_name="Normal", last_name="User"
         )
 
         anonymized_user = User.objects.create_user(
-            email="anonymized@example.com",
-            password="test123",
-            first_name="Anonymized",
-            last_name="User"
+            email="anonymized@example.com", password="test123", first_name="Anonymized", last_name="User"
         )
         anonymized_user.anonymize_user_data()
 

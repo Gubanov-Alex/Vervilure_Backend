@@ -451,11 +451,10 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": 3600,  # Run every hour
     },
     "cleanup-expired-accounts": {
-        'task': 'accounts.tasks.cleanup_expired_accounts',
-        'schedule': crontab(hour=2, minute=0),  # every day at 2:00 AM
+        "task": "accounts.tasks.cleanup_expired_accounts",
+        "schedule": crontab(hour=2, minute=0),  # every day at 2:00 AM
     },
 }
-
 
 
 if not IS_TESTING:

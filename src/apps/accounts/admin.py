@@ -159,9 +159,7 @@ class UserAdmin(BaseUserAdmin):
     def is_anonymized_status(self, obj):
         """Display anonymization status with visual indicator."""
         if obj.is_anonymized:
-            return format_html(
-                '<span style="color: #d63384; font-weight: bold;">🔒 Anonymized</span>'
-            )
+            return format_html('<span style="color: #d63384; font-weight: bold;">🔒 Anonymized</span>')
         return format_html('<span style="color: #198754;">📝 Active</span>')
 
     is_anonymized_status.short_description = "Data Status"
@@ -172,14 +170,12 @@ class UserAdmin(BaseUserAdmin):
             if obj.can_reactivate():
                 deadline = obj.get_reactivation_deadline()
                 return format_html(
-                    '<span style="color: #fd7e14;">⏸️ Deactivated<br>'
-                    '<small>Can reactivate until {}</small></span>',
-                    deadline.strftime("%Y-%m-%d") if deadline else "N/A"
+                    '<span style="color: #fd7e14;">⏸️ Deactivated<br>' "<small>Can reactivate until {}</small></span>",
+                    deadline.strftime("%Y-%m-%d") if deadline else "N/A",
                 )
             else:
                 return format_html(
-                    '<span style="color: #dc3545;">❌ Expired<br>'
-                    '<small>Cannot reactivate</small></span>'
+                    '<span style="color: #dc3545;">❌ Expired<br>' "<small>Cannot reactivate</small></span>"
                 )
         elif not obj.is_active:
             return format_html('<span style="color: #6c757d;">⏸️ Inactive</span>')
@@ -211,8 +207,7 @@ class UserAdmin(BaseUserAdmin):
         """Admin action to anonymize users with expired deactivation period."""
         count = 0
         for user in queryset:
-            if (user.deactivated_at and not user.can_reactivate()
-                    and not user.is_anonymized):
+            if user.deactivated_at and not user.can_reactivate() and not user.is_anonymized:
                 anonymous_id = user.anonymize_user_data()
                 count += 1
 
@@ -229,14 +224,16 @@ class UserAdmin(BaseUserAdmin):
     def get_readonly_fields(self, request, obj=None):
         readonly = list(self.readonly_fields)
         if not request.user.is_superuser:
-            readonly.extend([
-                "is_staff",
-                "is_superuser",
-                "user_permissions",
-                "groups",
-                "is_anonymized",
-                "deactivation_reason",
-            ])
+            readonly.extend(
+                [
+                    "is_staff",
+                    "is_superuser",
+                    "user_permissions",
+                    "groups",
+                    "is_anonymized",
+                    "deactivation_reason",
+                ]
+            )
         return readonly
 
     def has_delete_permission(self, request, obj=None):
@@ -251,6 +248,7 @@ class UserAdmin(BaseUserAdmin):
 
 class UserAddressInline(admin.TabularInline):
     """Inline admin for user addresses."""
+
     model = UserAddress
     extra = 0
     fields = ["address_type", "first_name", "last_name", "address_line1", "city", "country", "is_default"]
