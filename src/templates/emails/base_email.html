@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ subject|default:"Vervilure" }}</title>
+    <style>
+        /* ... style exist ... */
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="header">
+            <div class="logo">{{ site_name|default:"Vervilure" }}</div>
+            <p>Your Premium E-commerce Experience</p>
+        </div>
+
+        <div class="content">
+            {% block content %}
+            <h2>Hello{% if user %}, {{ user.get_full_name|default:user.email }}{% endif %}!</h2>
+            <p>{{ message|default:"Thank you for using our service." }}</p>
+            {% endblock %}
+        </div>
+
+        <div class="footer">
+            <p>&copy; 2025 {{ site_name|default:"Vervilure" }}. All rights reserved.</p>
+            <p>This email was sent from {{ site_name|default:"Vervilure" }} development environment.</p>
+        </div>
+    </div>
+</body>
+</html>

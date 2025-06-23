@@ -1,0 +1,34 @@
+{% extends "emails/base_email.html" %}
+
+{% block content %}
+    <h2>🎉 {{ subject|default:"Test Email Successful!" }}</h2>
+
+    <p>Congratulations! Your email system is working perfectly.</p>
+
+    <div class="verification-code">
+        EMAIL-TEST-SUCCESS
+    </div>
+
+    <p><strong>Test Details:</strong></p>
+    <ul>
+        <li>✅ SMTP Connection: Working</li>
+        <li>✅ Template Rendering: Working</li>
+        <li>✅ Mailpit Integration: Working</li>
+        <li>✅ HTML/Plain Text: Both formats</li>
+    </ul>
+
+    <p>{{ test_message }}</p>
+
+    <p><strong>Timestamp:</strong> {{ timestamp }}</p>
+    <p><strong>Recipient:</strong> {{ recipient }}</p>
+
+    <p>You can now proceed with implementing:</p>
+    <ul>
+        <li>Email verification</li>
+        <li>Password reset</li>
+        <li>Order confirmations</li>
+        <li>Marketing emails</li>
+    </ul>
+
+    <p>Happy coding! 🚀</p>
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "emails/base_email.html" %}
+
+{% block title %}Verify Your Email Address{% endblock %}
+
+{% block content %}
+    <h2>Welcome to {{ site_name }}!</h2>
+
+    <p>Hello, {{ user.first_name|default:user.username }}!</p>
+
+    <p>Thank you for registering with {{ site_name }}. To complete your registration and secure your account, please verify your email address.</p>
+
+    <div class="verification-code">
+        <a href="{{ verification_url }}" style="background-color: #28a745; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block; font-weight: 600;">
+            Verify Email Address
+        </a>
+    </div>
+
+    <p>If the button doesn't work, copy and paste this link into your browser:</p>
+    <p><a href="{{ verification_url }}">{{ verification_url }}</a></p>
+
+    <p>If you didn't create an account with {{ site_name }}, you can safely ignore this email.</p>
+
+    <p><strong>Note:</strong> This verification link will expire in 24 hours for security purposes.</p>
+{% endblock %}
