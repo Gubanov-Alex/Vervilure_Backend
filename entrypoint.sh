@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Improved entrypoint with permission handling
+# Fixed entrypoint WITHOUT chmod operations on bind mounts
 set -e
 
 # Colors for logging
@@ -32,39 +32,67 @@ wait_for_redis() {
     echo -e "${GREEN}✅ Redis is ready!${NC}"
 }
 
-# Function to fix permissions
-fix_permissions() {
-    echo -e "${YELLOW}🔧 Checking and fixing permissions...${NC}"
+# Function to ensure migrations directories exist (WITHOUT chmod on bind mounts)
+ensure_migrations_dirs() {
+    echo -e "${YELLOW}🔧 Ensuring migrations directories exist...${NC}"
 
-    # Create migrations directories if they don't exist
-    find /app/src -name "apps" -type d -exec find {} -name "migrations" -type d \; | while read migrations_dir; do
+    # Define all Django apps that need migrations
+    APPS=(
+        "accounts"
+        "orders"
+        "products"
+        "cart"
+        "inventory"
+        "shipping"
+        "payments"
+        "reviews"
+        "analytics"
+    )
+
+    # Create migrations directories for each app
+    for app in "${APPS[@]}"; do
+        migrations_dir="/app/src/apps/${app}/migrations"
+
+        # Create directory if it doesn't exist
         if [ ! -d "$migrations_dir" ]; then
             echo "Creating migrations directory: $migrations_dir"
-            mkdir -p "$migrations_dir"
+            mkdir -p "$migrations_dir" 2>/dev/null || {
+                echo "⚠️  Cannot create $migrations_dir (bind mount read-only)"
+                continue
+            }
         fi
 
-        # Ensure __init__.py exists in migrations directories
+        # Ensure __init__.py exists
         if [ ! -f "$migrations_dir/__init__.py" ]; then
             echo "Creating __init__.py in: $migrations_dir"
-            touch "$migrations_dir/__init__.py"
+            touch "$migrations_dir/__init__.py" 2>/dev/null || {
+                echo "⚠️  Cannot create __init__.py in $migrations_dir (bind mount read-only)"
+                continue
+            }
         fi
+
+        # Skip chmod operations on bind mounted directories
+        echo "✓ Directory $migrations_dir ready (bind mount - skipping chmod)"
     done
 
-    # Fix ownership of critical directories (if running as root, switch to django user)
+    echo -e "${GREEN}✅ Migrations directories ready!${NC}"
+}
+
+# Function to fix permissions if running as root (skip bind mounts)
+fix_permissions() {
     if [ "$(id -u)" = "0" ]; then
-        echo "Running as root, fixing ownership..."
-        chown -R django:django /app/src /app/logs /app/media /app/static /app/staticfiles 2>/dev/null || true
-        find /app -type d -name "migrations" -exec chown -R django:django {} \; 2>/dev/null || true
+        echo -e "${YELLOW}🔧 Running as root, fixing ownership and switching to django user...${NC}"
+
+        # Fix ownership only of Docker volumes (not bind mounts)
+        chown -R django:django /app/logs /app/media /app/static /app/staticfiles 2>/dev/null || true
+
+        # Skip bind mounted directories to avoid permission errors
+        echo "ℹ️  Skipping /app/src (bind mount)"
 
         # Switch to django user for rest of execution
+        echo -e "${GREEN}🔄 Switching to django user...${NC}"
         exec gosu django "$0" "$@"
     fi
-
-    # Set proper permissions for current user
-    chmod -R 755 /app/src 2>/dev/null || true
-    find /app -type d -name "migrations" -exec chmod -R 755 {} \; 2>/dev/null || true
-
-    echo -e "${GREEN}✅ Permissions fixed!${NC}"
 }
 
 # Function to run Django checks
@@ -74,18 +102,16 @@ run_django_checks() {
     # Basic check
     python manage.py check --deploy 2>/dev/null || python manage.py check
 
-    # Check if migrations are needed
-    if python manage.py showmigrations --plan | grep -q "\[ \]"; then
-        echo -e "${YELLOW}⚠️  Unapplied migrations detected${NC}"
-    else
-        echo -e "${GREEN}✅ All migrations are applied${NC}"
-    fi
+    echo -e "${GREEN}✅ Django checks passed!${NC}"
 }
 
 # Main execution flow
 main() {
-    # Fix permissions first
+    # Fix permissions if needed (will exec if running as root)
     fix_permissions
+
+    # Ensure migrations directories exist
+    ensure_migrations_dirs
 
     # Wait for services based on command
     case "$1" in
@@ -113,12 +139,6 @@ main() {
     # Execute the provided command
     exec "$@"
 }
-
-# Install gosu if not present (for user switching)
-if [ "$(id -u)" = "0" ] && [ ! -x "$(command -v gosu)" ]; then
-    echo "Installing gosu for user switching..."
-    apt-get update && apt-get install -y gosu && rm -rf /var/lib/apt/lists/*
-fi
 
 # Run main function
 main "$@"

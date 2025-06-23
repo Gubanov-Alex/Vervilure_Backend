@@ -80,19 +80,30 @@ services:
     container_name: vervilure_web
     environment:
       <<: *common-variables
-      # Ensure proper Python path for imports
       PYTHONPATH: "/app:/app/src"
-      # Add temp directory for formatting tools
       TMPDIR: "/tmp/formatting"
     ports:
       - "127.0.0.1:8000:8000"
       - "127.0.0.1:5678:5678"
     volumes:
-      - .:/app:delegated
+      # ИЗМЕНЕНИЕ: Селективное монтирование вместо полного bind mount
+      # Монтируем только необходимые файлы для разработки
+      - ./src:/app/src:delegated
+      - ./config:/app/config:delegated
+      - ./manage.py:/app/manage.py:delegated
+      - ./pyproject.toml:/app/pyproject.toml:delegated
+      - ./poetry.lock:/app/poetry.lock:delegated
+
+      # Директории для записи используют Docker volumes
       - logs_data:/app/logs
       - media_data:/app/media
-      # Add writable temporary directory for isort
+      - static_data:/app/static
+      - staticfiles_data:/app/staticfiles
       - temp_data:/tmp/formatting
+
+      # ВАЖНО: НЕ монтируем migrations директории с хоста!
+      # Django будет создавать их внутри контейнера с правильными правами
+
     env_file:
       - .env.docker
     depends_on:
@@ -128,8 +139,14 @@ services:
       PYTHONPATH: "/app:/app/src"
     command: /entrypoint.sh celery -A config worker --loglevel=info --concurrency=2
     volumes:
-      - .:/app:delegated
+      # Те же изменения для celery
+      - ./src:/app/src:delegated
+      - ./config:/app/config:delegated
+      - ./manage.py:/app/manage.py:delegated
+      - ./pyproject.toml:/app/pyproject.toml:delegated
+      - ./poetry.lock:/app/poetry.lock:delegated
       - logs_data:/app/logs
+      - media_data:/app/media
     env_file:
       - .env.docker
     depends_on:
@@ -160,7 +177,12 @@ services:
       PYTHONPATH: "/app:/app/src"
     command: /entrypoint.sh celery -A config beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
     volumes:
-      - .:/app:delegated
+      # Те же изменения для celery-beat
+      - ./src:/app/src:delegated
+      - ./config:/app/config:delegated
+      - ./manage.py:/app/manage.py:delegated
+      - ./pyproject.toml:/app/pyproject.toml:delegated
+      - ./poetry.lock:/app/poetry.lock:delegated
       - logs_data:/app/logs
     env_file:
       - .env.docker
@@ -184,6 +206,10 @@ volumes:
   logs_data:
     driver: local
   media_data:
+    driver: local
+  static_data:
+    driver: local
+  staticfiles_data:
     driver: local
   temp_data:
     driver: local
