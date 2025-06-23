@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from django.utils.safestring import mark_safe
+from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
 from .models import BlacklistedToken, User, UserAddress
@@ -8,53 +8,18 @@ from .models import BlacklistedToken, User, UserAddress
 
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
-    """
-    Enhanced admin interface for a User model.
+    """Enhanced admin interface for User model with deletion tracking."""
 
-    Provides comprehensive user management with custom fields and actions.
-    """
-
-    fieldsets = (
-        (None, {"fields": ("email", "password")}),
-        (
-            _("Personal info"),
-            {"fields": ("first_name", "last_name", "phone_number", "date_of_birth", "avatar_preview", "avatar")},
-        ),
-        (_("Account Settings"), {"fields": ("is_email_verified", "marketing_consent", "newsletter_subscription")}),
-        (
-            _("Permissions"),
-            {
-                "fields": ("is_active", "is_staff", "is_superuser", "groups", "user_permissions"),
-                "classes": ("collapse",),
-            },
-        ),
-        (
-            _("Important dates"),
-            {"fields": ("last_login", "date_joined", "created_at", "updated_at"), "classes": ("collapse",)},
-        ),
-        (_("Security"), {"fields": ("last_login_ip", "email_verification_token"), "classes": ("collapse",)}),
-    )
-
-    add_fieldsets = (
-        (
-            None,
-            {
-                "classes": ("wide",),
-                "fields": ("email", "first_name", "last_name", "password1", "password2", "is_email_verified"),
-            },
-        ),
-    )
-
+    # Display configuration
     list_display = [
-        "id",
         "email",
         "full_name",
-        "is_active",
         "is_email_verified",
-        "is_staff",
-        "date_joined",
+        "is_active",
+        "is_anonymized_status",
+        "deactivation_status",
+        "created_at",
         "last_login",
-        # "orders_count",
     ]
 
     list_filter = [
@@ -62,105 +27,230 @@ class UserAdmin(BaseUserAdmin):
         "is_staff",
         "is_superuser",
         "is_email_verified",
+        "is_anonymized",
+        "deactivated_at",
+        "created_at",
         "marketing_consent",
         "newsletter_subscription",
-        "date_joined",
-        "last_login",
     ]
 
-    search_fields = ["email", "first_name", "last_name", "phone_number"]
-    ordering = ["-date_joined"]
+    search_fields = [
+        "email",
+        "first_name",
+        "last_name",
+        "phone_number",
+    ]
+
     readonly_fields = [
-        "id",
-        "date_joined",
-        "last_login",
         "created_at",
         "updated_at",
+        "last_login",
         "email_verification_token",
-        "avatar_preview",
-        # "orders_count",
+        "google_id",
+        "deactivated_at",
+        "anonymized_at",
     ]
 
-    actions = ["verify_email", "send_verification_email", "deactivate_users"]
+    # Fieldsets for detailed view
+    fieldsets = (
+        (None, {"fields": ("email", "password")}),
+        (
+            _("Personal info"),
+            {
+                "fields": (
+                    "first_name",
+                    "last_name",
+                    "phone_number",
+                    "date_of_birth",
+                    "avatar",
+                )
+            },
+        ),
+        (
+            _("Account Status"),
+            {
+                "fields": (
+                    "is_active",
+                    "is_email_verified",
+                    "is_staff",
+                    "is_superuser",
+                )
+            },
+        ),
+        (
+            _("Account Deletion/Anonymization"),
+            {
+                "fields": (
+                    "deactivated_at",
+                    "deactivation_reason",
+                    "is_anonymized",
+                    "anonymized_at",
+                ),
+                "classes": ("collapse",),
+                "description": "Fields related to account deletion and anonymization processes.",
+            },
+        ),
+        (
+            _("Email Verification"),
+            {
+                "fields": (
+                    "email_verification_token",
+                    "email_verification_sent_at",
+                ),
+                "classes": ("collapse",),
+            },
+        ),
+        (
+            _("Marketing Preferences"),
+            {
+                "fields": (
+                    "marketing_consent",
+                    "newsletter_subscription",
+                ),
+                "classes": ("collapse",),
+            },
+        ),
+        (
+            _("Metadata"),
+            {
+                "fields": (
+                    "google_id",
+                    "last_login_ip",
+                    "created_at",
+                    "updated_at",
+                    "last_login",
+                ),
+                "classes": ("collapse",),
+            },
+        ),
+        (_("Permissions"), {"fields": ("groups", "user_permissions"), "classes": ("collapse",)}),
+    )
 
-    def avatar_preview(self, obj):
-        """Display avatar preview in admin."""
-        if obj.avatar:
-            return mark_safe(f'<img src="{obj.avatar.url}" width="50" height="50" ' f'style="border-radius: 50%;" />')
-        return "No avatar"
+    # Add fieldsets for new user creation
+    add_fieldsets = (
+        (
+            None,
+            {
+                "classes": ("wide",),
+                "fields": (
+                    "email",
+                    "first_name",
+                    "last_name",
+                    "password1",
+                    "password2",
+                    "is_email_verified",
+                ),
+            },
+        ),
+    )
 
-    avatar_preview.short_description = "Avatar Preview"
+    # Custom ordering
+    ordering = ["-created_at"]
 
-    def short_id(self, obj):
-        """Display short version of UUID for readability."""
-        return str(obj.id)[:8] + "..."
+    # Custom methods for list display
+    def full_name(self, obj):
+        """Display full name with anonymization status."""
+        if obj.is_anonymized:
+            return format_html('<span style="color: #999; font-style: italic;">Anonymized User</span>')
+        return obj.get_full_name()
 
-    short_id.short_description = "Short ID"
+    full_name.short_description = "Full Name"
 
-    # def orders_count(self, obj):
-    #     """Display count of user orders with link."""
-    #     count = obj.orders.count()
-    #     if count > 0:
-    #         url = reverse("admin:orders_order_changelist") + f"?user__id__exact={obj.id}"
-    #         return format_html('<a href="{}">{} orders</a>', url, count)
-    #     return "0 orders"
-    #
-    # orders_count.short_description = "Orders"
+    def is_anonymized_status(self, obj):
+        """Display anonymization status with visual indicator."""
+        if obj.is_anonymized:
+            return format_html(
+                '<span style="color: #d63384; font-weight: bold;">🔒 Anonymized</span>'
+            )
+        return format_html('<span style="color: #198754;">📝 Active</span>')
 
-    def verify_email(self, request, queryset):
-        """Admin action to verify user emails."""
-        updated = queryset.update(is_email_verified=True)
-        self.message_user(request, f"Successfully verified {updated} user(s).")
+    is_anonymized_status.short_description = "Data Status"
 
-    verify_email.short_description = "Verify selected users' emails"
+    def deactivation_status(self, obj):
+        """Display deactivation status with reactivation info."""
+        if obj.deactivated_at:
+            if obj.can_reactivate():
+                deadline = obj.get_reactivation_deadline()
+                return format_html(
+                    '<span style="color: #fd7e14;">⏸️ Deactivated<br>'
+                    '<small>Can reactivate until {}</small></span>',
+                    deadline.strftime("%Y-%m-%d") if deadline else "N/A"
+                )
+            else:
+                return format_html(
+                    '<span style="color: #dc3545;">❌ Expired<br>'
+                    '<small>Cannot reactivate</small></span>'
+                )
+        elif not obj.is_active:
+            return format_html('<span style="color: #6c757d;">⏸️ Inactive</span>')
+        else:
+            return format_html('<span style="color: #198754;">✅ Active</span>')
 
-    def send_verification_email(self, request, queryset):
-        """Admin action to send verification emails."""
-        from .tasks import send_verification_email
+    deactivation_status.short_description = "Account Status"
 
+    # Custom actions
+    def reactivate_users(self, request, queryset):
+        """Admin action to reactivate eligible users."""
         count = 0
-        for user in queryset.filter(is_email_verified=False):
-            send_verification_email.delay(user.id)
-            count += 1
+        for user in queryset:
+            if user.deactivated_at and user.can_reactivate() and not user.is_anonymized:
+                user.is_active = True
+                user.deactivated_at = None
+                user.deactivation_reason = ""
+                user.save()
+                count += 1
 
-        self.message_user(request, f"Verification emails queued for {count} user(s).")
+        if count:
+            self.message_user(request, f"Successfully reactivated {count} user(s).")
+        else:
+            self.message_user(request, "No eligible users found for reactivation.", level="warning")
 
-    send_verification_email.short_description = "Send verification emails"
+    reactivate_users.short_description = "Reactivate selected deactivated users"
 
-    def deactivate_users(self, request, queryset):
-        """Admin action to deactivate users."""
-        updated = queryset.update(is_active=False)
-        self.message_user(request, f"Successfully deactivated {updated} user(s).")
+    def anonymize_expired_users(self, request, queryset):
+        """Admin action to anonymize users with expired deactivation period."""
+        count = 0
+        for user in queryset:
+            if (user.deactivated_at and not user.can_reactivate()
+                    and not user.is_anonymized):
+                anonymous_id = user.anonymize_user_data()
+                count += 1
 
-    deactivate_users.short_description = "Deactivate selected users"
+        if count:
+            self.message_user(request, f"Successfully anonymized {count} expired user(s).")
+        else:
+            self.message_user(request, "No eligible users found for anonymization.", level="warning")
 
-    def get_search_results(self, request, queryset, search_term):
-        """Custom search that handles UUID searches."""
-        queryset, may_have_duplicates = super().get_search_results(request, queryset, search_term)
-        if search_term and len(search_term) >= 8:
-            try:
-                import uuid
+    anonymize_expired_users.short_description = "Anonymize users with expired deactivation"
 
-                if len(search_term) == 36:
-                    uuid_obj = uuid.UUID(search_term)
-                    uuid_queryset = self.model.objects.filter(id=uuid_obj)
-                elif len(search_term) >= 8:
-                    uuid_queryset = self.model.objects.filter(id__startswith=search_term)
-                else:
-                    uuid_queryset = self.model.objects.none()
+    actions = ["reactivate_users", "anonymize_expired_users"]
 
-                queryset = queryset | uuid_queryset
-                may_have_duplicates = True
+    # Restrict permissions for non-superusers
+    def get_readonly_fields(self, request, obj=None):
+        readonly = list(self.readonly_fields)
+        if not request.user.is_superuser:
+            readonly.extend([
+                "is_staff",
+                "is_superuser",
+                "user_permissions",
+                "groups",
+                "is_anonymized",
+                "deactivation_reason",
+            ])
+        return readonly
 
-            except (ValueError, TypeError):
-                pass
+    def has_delete_permission(self, request, obj=None):
+        """Restrict deletion to superusers only."""
+        return request.user.is_superuser
 
-        return queryset, may_have_duplicates
+    # Custom queryset optimization
+    def get_queryset(self, request):
+        """Optimize queryset for admin list view."""
+        return super().get_queryset(request).select_related()
 
 
 class UserAddressInline(admin.TabularInline):
     """Inline admin for user addresses."""
-
     model = UserAddress
     extra = 0
     fields = ["address_type", "first_name", "last_name", "address_line1", "city", "country", "is_default"]

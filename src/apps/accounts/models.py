@@ -51,6 +51,31 @@ class User(AbstractUser):
     email_verification_sent_at = models.DateTimeField(null=True, blank=True)
     is_email_verified = models.BooleanField(default=False)
 
+    # Account deletion/deactivation fields
+    deactivated_at = models.DateTimeField(
+        _("deactivated at"),
+        null=True,
+        blank=True,
+        help_text=_("Timestamp when account was deactivated (soft delete)")
+    )
+    deactivation_reason = models.TextField(
+        _("deactivation reason"),
+        max_length=500,
+        blank=True,
+        help_text=_("Reason provided by user for account deactivation")
+    )
+    is_anonymized = models.BooleanField(
+        _("is anonymized"),
+        default=False,
+        help_text=_("Whether user data has been anonymized")
+    )
+    anonymized_at = models.DateTimeField(
+        _("anonymized at"),
+        null=True,
+        blank=True,
+        help_text=_("Timestamp when account was anonymized")
+    )
+
     def is_verification_token_valid(self) -> bool:
         """Check if the verification token is still valid (24h window)."""
         if not self.email_verification_sent_at:
@@ -113,9 +138,16 @@ class User(AbstractUser):
             models.Index(fields=["is_active", "is_email_verified"]),
             models.Index(fields=["google_id"]),
             models.Index(fields=["email_verification_token"]),
+            # Indexes for deletion/anonymization fields
+            models.Index(fields=["deactivated_at"], condition=models.Q(deactivated_at__isnull=False)),
+            models.Index(fields=["anonymized_at"], condition=models.Q(anonymized_at__isnull=False)),
+            models.Index(fields=["is_anonymized"], condition=models.Q(is_anonymized=True)),
+            models.Index(fields=["is_active", "deactivated_at"]),
         ]
 
     def __str__(self) -> str:
+        if self.is_anonymized:
+            return f"Anonymized User ({self.id})"
         return f"{self.email} ({self.get_full_name()})"
 
     @property
@@ -131,6 +163,14 @@ class User(AbstractUser):
         """Custom validation for the model."""
         super().clean()
         self.email = self.__class__.objects.normalize_email(self.email)
+
+        # Validation for deletion fields
+        if self.is_anonymized and not self.anonymized_at:
+            self.anonymized_at = timezone.now()
+
+        if not self.is_active and self.deactivated_at is None:
+            # If user is being deactivated but deactivated_at is not set
+            pass  # Let the view handle this
 
 
 class UserAddress(models.Model):

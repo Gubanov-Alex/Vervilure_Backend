@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 import dj_database_url
+from celery.schedules import crontab
 from dotenv import load_dotenv
 
 # Environment detection
@@ -449,7 +450,13 @@ CELERY_BEAT_SCHEDULE = {
         "task": "src.apps.accounts.tasks.cleanup_expired_tokens",
         "schedule": 3600,  # Run every hour
     },
+    "cleanup-expired-accounts": {
+        'task': 'accounts.tasks.cleanup_expired_accounts',
+        'schedule': crontab(hour=2, minute=0),  # every day at 2:00 AM
+    },
 }
+
+
 
 if not IS_TESTING:
     CELERY_TASK_ACKS_LATE = True
