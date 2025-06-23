@@ -1,9 +1,15 @@
+import logging
 from django.contrib import admin
+from django.contrib import messages
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from django.db import transaction
 from django.utils.html import format_html
-from django.utils.translation import gettext_lazy as _
+from django.utils.translation import gettext_lazy as _, ngettext
 
 from .models import BlacklistedToken, User, UserAddress
+from .tasks import send_verification_email
+
+logger = logging.getLogger(__name__)
 
 
 @admin.register(User)
@@ -184,7 +190,7 @@ class UserAdmin(BaseUserAdmin):
 
     deactivation_status.short_description = "Account Status"
 
-    # Custom actions
+    # EXISTING ACTIONS
     def reactivate_users(self, request, queryset):
         """Admin action to reactivate eligible users."""
         count = 0
@@ -218,7 +224,207 @@ class UserAdmin(BaseUserAdmin):
 
     anonymize_expired_users.short_description = "Anonymize users with expired deactivation"
 
-    actions = ["reactivate_users", "anonymize_expired_users"]
+    # NEW EMAIL VERIFICATION ACTIONS
+    def verify_email_action(self, request, queryset):
+        """
+        Admin action to mark email as verified for selected users.
+
+        Features:
+        - Atomic transaction for data consistency
+        - Skip already verified users
+        - Activate users upon verification
+        - Comprehensive logging
+        """
+        updated_count = 0
+        already_verified_count = 0
+        error_count = 0
+
+        try:
+            with transaction.atomic():
+                for user in queryset.select_for_update():
+                    try:
+                        if user.is_email_verified:
+                            already_verified_count += 1
+                            continue
+
+                        # Update verification status and activate user
+                        user.is_email_verified = True
+                        user.is_active = True
+                        user.save(update_fields=['is_email_verified', 'is_active'])
+
+                        updated_count += 1
+
+                        logger.info(
+                            f"Email manually verified by admin: {user.email}",
+                            extra={
+                                'user_id': user.id,
+                                'admin_user': request.user.email,
+                                'action': 'manual_verify_email',
+                                'ip_address': request.META.get('REMOTE_ADDR', 'unknown')
+                            }
+                        )
+
+                    except Exception as e:
+                        error_count += 1
+                        logger.error(
+                            f"Failed to verify email for user {user.email}: {e}",
+                            extra={
+                                'user_id': user.id,
+                                'admin_user': request.user.email,
+                                'error': str(e)
+                            }
+                        )
+
+            # Provide user feedback
+            if updated_count > 0:
+                messages.success(
+                    request,
+                    ngettext(
+                        "Successfully verified email for %d user.",
+                        "Successfully verified emails for %d users.",
+                        updated_count
+                    ) % updated_count
+                )
+
+            if already_verified_count > 0:
+                messages.info(
+                    request,
+                    ngettext(
+                        "%d user was already verified.",
+                        "%d users were already verified.",
+                        already_verified_count
+                    ) % already_verified_count
+                )
+
+            if error_count > 0:
+                messages.warning(
+                    request,
+                    ngettext(
+                        "Failed to verify %d user. Check logs for details.",
+                        "Failed to verify %d users. Check logs for details.",
+                        error_count
+                    ) % error_count
+                )
+
+        except Exception as e:
+            messages.error(request, f"Critical error during email verification: {e}")
+            logger.error(
+                f"Admin verify email action failed: {e}",
+                extra={'admin_user': request.user.email, 'error': str(e)}
+            )
+
+    verify_email_action.short_description = "✅ Verify email for selected users"
+
+    def send_verification_email_action(self, request, queryset):
+        """
+        Admin action to send verification emails to selected users via Celery.
+
+        Features:
+        - Asynchronous email sending via existing Celery task
+        - Skip already verified users
+        - Skip users without email addresses
+        - Comprehensive logging and feedback
+        """
+        sent_count = 0
+        already_verified_count = 0
+        skipped_count = 0
+        error_count = 0
+
+        try:
+            for user in queryset:
+                try:
+                    # Skip already verified users
+                    if user.is_email_verified:
+                        already_verified_count += 1
+                        continue
+
+                    # Skip users without email
+                    if not user.email:
+                        skipped_count += 1
+                        continue
+
+                    # Queue email sending task using your existing Celery task
+                    send_verification_email.delay(user.id)
+                    sent_count += 1
+
+                    logger.info(
+                        f"Verification email queued by admin: {user.email}",
+                        extra={
+                            'user_id': user.id,
+                            'admin_user': request.user.email,
+                            'action': 'admin_send_verification',
+                            'ip_address': request.META.get('REMOTE_ADDR', 'unknown')
+                        }
+                    )
+
+                except Exception as e:
+                    error_count += 1
+                    logger.error(
+                        f"Failed to queue verification email for {user.email}: {e}",
+                        extra={
+                            'user_id': user.id,
+                            'admin_user': request.user.email,
+                            'error': str(e)
+                        }
+                    )
+
+            # Provide user feedback
+            if sent_count > 0:
+                messages.success(
+                    request,
+                    ngettext(
+                        "Verification email queued for %d user.",
+                        "Verification emails queued for %d users.",
+                        sent_count
+                    ) % sent_count
+                )
+
+            if already_verified_count > 0:
+                messages.info(
+                    request,
+                    ngettext(
+                        "%d user already has verified email.",
+                        "%d users already have verified emails.",
+                        already_verified_count
+                    ) % already_verified_count
+                )
+
+            if skipped_count > 0:
+                messages.warning(
+                    request,
+                    ngettext(
+                        "Skipped %d user (missing email or error).",
+                        "Skipped %d users (missing emails or errors).",
+                        skipped_count
+                    ) % skipped_count
+                )
+
+            if error_count > 0:
+                messages.error(
+                    request,
+                    ngettext(
+                        "Failed to queue email for %d user. Check logs for details.",
+                        "Failed to queue emails for %d users. Check logs for details.",
+                        error_count
+                    ) % error_count
+                )
+
+        except Exception as e:
+            messages.error(request, f"Critical error during email sending: {e}")
+            logger.error(
+                f"Admin send verification action failed: {e}",
+                extra={'admin_user': request.user.email, 'error': str(e)}
+            )
+
+    send_verification_email_action.short_description = "📧 Send verification email to selected users"
+
+    # UPDATED ACTIONS LIST - добавлены новые email actions
+    actions = [
+        "reactivate_users",
+        "anonymize_expired_users",
+        "verify_email_action",
+        "send_verification_email_action"
+    ]
 
     # Restrict permissions for non-superusers
     def get_readonly_fields(self, request, obj=None):
