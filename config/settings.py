@@ -256,13 +256,16 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
+AUTH_USER_MODEL = "accounts.User"
+
 # Authentication Backends
 AUTHENTICATION_BACKENDS = [
     "django.contrib.auth.backends.ModelBackend",
     "allauth.account.auth_backends.AuthenticationBackend",
 ]
 
-AUTH_USER_MODEL = "accounts.User"
+# Admin settings for custom User model
+ADMIN_USER_MODEL = "accounts.User"
 
 # Django Allauth Configuration
 SITE_ID = 1

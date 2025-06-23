@@ -5,11 +5,10 @@ This module contains comprehensive tests for account deletion workflows,
 including soft deletion, anonymization, and complete data removal.
 """
 
-import pytest
-from unittest.mock import patch
-from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
+
+import pytest
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -74,7 +73,8 @@ class TestUserModelMethods:
         user.anonymize_user_data()
         anonymized_str = str(user)
         assert "Anonymized User" in anonymized_str
-        assert user.id in anonymized_str
+        # FIX: Convert user.id to string for proper comparison
+        assert str(user.id) in anonymized_str
 
     def test_full_name_property_when_anonymized(self):
         """Test full_name property for anonymized users."""
@@ -96,7 +96,7 @@ class TestAccountDeletionAPI(APITestCase):
         self.user = User.objects.create_user(
             email="test@example.com", password="testpass123", first_name="John", last_name="Doe"
         )
-        # FIXED: Use correct URL pattern from users namespace
+        # Use correct URL pattern from users namespace
         self.delete_url = reverse("users:delete_account")
 
     def test_delete_account_requires_authentication(self):
@@ -111,7 +111,7 @@ class TestAccountDeletionAPI(APITestCase):
         response = self.client.delete(self.delete_url, {"deletion_type": "soft"})
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
-        # FIXED: Match exact error message from API
+        # Match exact error message from API
         assert "Password confirmation is required for account deletion" in response.data["error"]
 
     def test_delete_account_invalid_password(self):
@@ -130,7 +130,7 @@ class TestAccountDeletionAPI(APITestCase):
         response = self.client.delete(self.delete_url, {"password": "testpass123", "deletion_type": "invalid"})
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
-        # FIXED: Match exact error message from API
+        # Match exact error message from API
         assert "Invalid deletion type" in response.data["error"]
         assert "Must be 'soft', 'hard', or 'anonymize'" in response.data["error"]
 
@@ -161,7 +161,7 @@ class TestAccountDeletionAPI(APITestCase):
             self.delete_url, {"password": "testpass123", "deletion_type": "anonymize", "reason": "Privacy request"}
         )
 
-        # FIXED: Anonymization returns 204 NO CONTENT, not 200 OK
+        # Anonymization returns 204 NO CONTENT, not 200 OK
         assert response.status_code == status.HTTP_204_NO_CONTENT
 
         # Check database changes
@@ -182,7 +182,7 @@ class TestAccountDeletionAPI(APITestCase):
             self.delete_url, {"password": "testpass123", "deletion_type": "hard", "reason": "Complete removal"}
         )
 
-        # FIXED: Hard delete returns 204 NO CONTENT, not 200 OK
+        # Hard delete returns 204 NO CONTENT, not 200 OK
         assert response.status_code == status.HTTP_204_NO_CONTENT
 
         # Check that user no longer exists

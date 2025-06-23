@@ -1,11 +1,13 @@
 import uuid
 from datetime import timedelta
+from typing import Any, Dict, Optional
 
 from django.contrib.auth.base_user import BaseUserManager
 from django.contrib.auth.models import AbstractUser
 from django.core.validators import RegexValidator
 from django.db import models
 from django.utils import timezone
+from django.utils.crypto import get_random_string
 from django.utils.translation import gettext_lazy as _
 
 
@@ -18,6 +20,17 @@ class UserManager(BaseUserManager):
             raise ValueError("The Email field must be set")
 
         email = self.normalize_email(email)
+
+        # Auto-generate username from email if not provided
+        if "username" not in extra_fields or not extra_fields["username"]:
+            base_username = email.split("@")[0]
+            username = base_username
+            counter = 1
+            while self.filter(username=username).exists():
+                username = f"{base_username}_{counter}"
+                counter += 1
+            extra_fields["username"] = username
+
         user = self.model(email=email, **extra_fields)
         user.set_password(password)
         user.save(using=self._db)
@@ -42,112 +55,48 @@ class UserManager(BaseUserManager):
 
         return self._create_user(email, password, **extra_fields)
 
+    def active_users(self):
+        """Return queryset of active users (not deactivated or anonymized)."""
+        return self.filter(is_active=True, is_anonymized=False, deactivated_at__isnull=True)
+
+    def deactivated_users(self):
+        """Return queryset of deactivated users (including anonymized)."""
+        return self.filter(
+            models.Q(is_active=False) | models.Q(deactivated_at__isnull=False) | models.Q(is_anonymized=True)
+        )
+
+    def anonymized_users(self):
+        """Return queryset of anonymized users."""
+        return self.filter(is_anonymized=True)
+
+    def users_for_deletion(self, days_threshold: int = 30):
+        """Return users eligible for deletion (deactivated more than threshold days ago)."""
+        cutoff_date = timezone.now() - timedelta(days=days_threshold)
+        return self.filter(is_active=False, deactivated_at__lt=cutoff_date, is_anonymized=False)
+
 
 class User(AbstractUser):
     """Extended user model with additional fields for e-commerce platform."""
+
+    # Override username to be nullable since we use email authentication
+    username = models.CharField(_("username"), max_length=150, unique=True, null=True, blank=True)
 
     email_verification_token = models.UUIDField(default=uuid.uuid4, unique=True)
     email_verification_sent_at = models.DateTimeField(null=True, blank=True)
     is_email_verified = models.BooleanField(default=False)
 
-    # Account deletion/deactivation fields
-    deactivated_at = models.DateTimeField(
-        _("deactivated at"), null=True, blank=True, help_text=_("Timestamp when account was deactivated (soft delete)")
-    )
-    deactivation_reason = models.TextField(
-        _("deactivation reason"),
-        max_length=500,
-        blank=True,
-        help_text=_("Reason provided by user for account deactivation"),
-    )
-    is_anonymized = models.BooleanField(
-        _("is anonymized"), default=False, help_text=_("Whether user data has been anonymized")
-    )
-    anonymized_at = models.DateTimeField(
-        _("anonymized at"), null=True, blank=True, help_text=_("Timestamp when account was anonymized")
-    )
-
-    def is_verification_token_valid(self) -> bool:
-        """Check if the verification token is still valid (24h window)."""
-        if not self.email_verification_sent_at:
-            return False
-        return timezone.now() < self.email_verification_sent_at + timedelta(hours=24)
-
-    def regenerate_verification_token(self) -> None:
-        """Generate new verification token and update timestamp."""
-        self.email_verification_token = uuid.uuid4()
-        self.email_verification_sent_at = timezone.now()
-        self.save(update_fields=["email_verification_token", "email_verification_sent_at"])
-
-    def can_reactivate(self) -> bool:
-        """Check if user can reactivate their account (within 30 days of deactivation)."""
-        if not self.deactivated_at:
-            return False
-
-        # Check if within 30-day reactivation window
-        reactivation_deadline = self.deactivated_at + timedelta(days=30)
-        return timezone.now() <= reactivation_deadline
-
-    def get_reactivation_deadline(self):
-        """Get the deadline for account reactivation."""
-        if not self.deactivated_at:
-            return None
-
-        return self.deactivated_at + timedelta(days=30)
-
-    def anonymize_user_data(self) -> str:
-        """Anonymize user data while preserving essential statistics."""
-        from django.utils.crypto import get_random_string
-
-        # Generate anonymous identifier
-        anonymous_id = f"deleted_user_{get_random_string(12)}"
-
-        # Anonymize personal data
-        self.email = f"{anonymous_id}@deleted.local"
-        self.first_name = "Deleted"
-        self.last_name = "User"
-        self.phone_number = None
-        self.date_of_birth = None
-        self.avatar = None
-        self.last_login_ip = None
-        self.google_id = None
-
-        # Mark as anonymized
-        self.is_active = False
-        self.is_anonymized = True
-        self.anonymized_at = timezone.now()
-
-        # Clear verification tokens
-        self.email_verification_token = uuid.uuid4()
-        self.email_verification_sent_at = None
-        self.is_email_verified = False
-
-        # Clear marketing preferences
-        self.marketing_consent = False
-        self.newsletter_subscription = False
-
-        self.save()
-
-        # Clean up related data
-        from .models import UserAddress
-
-        UserAddress.objects.filter(user=self).delete()
-
-        return anonymous_id
-
-    username = None  # Remove the username field
-    email = models.EmailField(_("email address"), unique=True)
+    # Personal information - override from AbstractUser to ensure proper settings
     first_name = models.CharField(_("first name"), max_length=150)
     last_name = models.CharField(_("last name"), max_length=150)
+    email = models.EmailField(_("email address"), unique=True)
 
-    # Additional profile fields
     phone_number = models.CharField(
         _("phone number"),
-        max_length=17,
+        max_length=20,
         validators=[
             RegexValidator(
                 regex=r"^\+?1?\d{9,15}$",
-                message=_('Phone number must be entered in format: "+999999999". Up to 15 digits allowed.'),
+                message=_('Phone number must be entered in the format: "+999999999". Up to 15 digits allowed.'),
             )
         ],
         blank=True,
@@ -168,6 +117,23 @@ class User(AbstractUser):
 
     # Google OAuth integration
     google_id = models.CharField(_("Google ID"), max_length=255, unique=True, null=True, blank=True)
+
+    # Account deletion/deactivation fields
+    deactivated_at = models.DateTimeField(
+        _("deactivated at"), null=True, blank=True, help_text=_("Timestamp when account was deactivated (soft delete)")
+    )
+    deactivation_reason = models.TextField(
+        _("deactivation reason"),
+        max_length=500,
+        blank=True,
+        help_text=_("Reason provided by user for account deactivation"),
+    )
+    is_anonymized = models.BooleanField(
+        _("is anonymized"), default=False, help_text=_("Whether user data has been anonymized")
+    )
+    anonymized_at = models.DateTimeField(
+        _("anonymized at"), null=True, blank=True, help_text=_("Timestamp when account was anonymized")
+    )
 
     # CRITICAL: Assign the custom manager
     objects = UserManager()
@@ -208,66 +174,207 @@ class User(AbstractUser):
     @property
     def full_name(self) -> str:
         """Return the user's full name."""
+        if self.is_anonymized:
+            return "Deleted User"
         return f"{self.first_name} {self.last_name}".strip()
 
     def get_full_name(self) -> str:
         """Return user's full name for Django compatibility."""
         return self.full_name
 
+    def is_verification_token_valid(self) -> bool:
+        """Check if the verification token is still valid (24h window)."""
+        if not self.email_verification_sent_at:
+            return True  # No expiration if never sent
+
+        expiry_time = self.email_verification_sent_at + timedelta(hours=24)
+        return timezone.now() <= expiry_time
+
+    def can_reactivate(self) -> bool:
+        """Check if account can be reactivated (within 30-day window)."""
+        if not self.deactivated_at or self.is_anonymized:
+            return False
+
+        reactivation_deadline = self.deactivated_at + timedelta(days=30)
+        return timezone.now() <= reactivation_deadline
+
+    def get_reactivation_deadline(self) -> Optional[timezone.datetime]:
+        """Get the deadline for account reactivation."""
+        if not self.deactivated_at:
+            return None
+        return self.deactivated_at + timedelta(days=30)
+
+    def soft_delete_user_data(self, reason: str = "") -> None:
+        """
+        Soft delete user account by deactivating it.
+
+        Args:
+            reason: Reason for account deactivation
+        """
+        self.is_active = False
+        self.deactivated_at = timezone.now()
+        self.deactivation_reason = reason
+        self.save(update_fields=["is_active", "deactivated_at", "deactivation_reason"])
+
+    def anonymize_user_data(self) -> str:
+        """
+        Anonymize user data while preserving account for statistical purposes.
+
+        Returns:
+            Anonymous identifier for the user
+        """
+        anonymous_id = f"deleted_user_{get_random_string(12)}"
+
+        self.email = f"{anonymous_id}@deleted.local"
+        self.first_name = "Deleted"
+        self.last_name = "User"
+        self.phone_number = None
+        self.date_of_birth = None
+        self.avatar = None
+        self.is_active = False
+        self.is_anonymized = True
+        self.anonymized_at = timezone.now()
+
+        # Clear marketing preferences
+        self.marketing_consent = False
+        self.newsletter_subscription = False
+
+        # Clear OAuth data
+        self.google_id = None
+
+        self.save()
+
+        # Clear related data that might contain PII
+        from .models import UserAddress  # Avoid circular import
+
+        UserAddress.objects.filter(user=self).delete()
+
+        return anonymous_id
+
+    def reactivate_account(self) -> None:
+        """
+        Reactivate a soft-deleted account if within reactivation window.
+
+        Raises:
+            ValueError: If account cannot be reactivated
+        """
+        if self.is_anonymized:
+            raise ValueError("Cannot reactivate anonymized account")
+
+        if self.deactivated_at:
+            if not self.can_reactivate():
+                raise ValueError("Reactivation deadline has passed")
+
+        self.is_active = True
+        self.deactivated_at = None
+        self.deactivation_reason = ""
+        self.save(update_fields=["is_active", "deactivated_at", "deactivation_reason"])
+
+    def export_user_data(self) -> Dict[str, Any]:
+        """
+        Export user data for GDPR compliance.
+
+        Returns:
+            Dictionary containing user's personal data
+        """
+        # Basic personal information
+        personal_info = {
+            "email": self.email,
+            "first_name": self.first_name,
+            "last_name": self.last_name,
+            "phone_number": self.phone_number,
+            "date_of_birth": self.date_of_birth.isoformat() if self.date_of_birth else None,
+            "created_at": self.created_at.isoformat(),
+            "last_login": self.last_login.isoformat() if self.last_login else None,
+        }
+
+        # Account settings
+        account_settings = {
+            "is_email_verified": self.is_email_verified,
+            "marketing_consent": self.marketing_consent,
+            "newsletter_subscription": self.newsletter_subscription,
+            "is_active": self.is_active,
+        }
+
+        # Activity logs (simplified)
+        activity_logs = {
+            "last_login_ip": self.last_login_ip,
+            "deactivated_at": self.deactivated_at.isoformat() if self.deactivated_at else None,
+            "deactivation_reason": self.deactivation_reason,
+        }
+
+        # Export related data
+        exported_data = {
+            "personal_information": personal_info,
+            "account_settings": account_settings,
+            "activity_logs": activity_logs,
+        }
+
+        # Add addresses if any
+        addresses = []
+        for address in self.addresses.all():
+            addresses.append(
+                {
+                    "type": address.address_type,
+                    "first_name": address.first_name,
+                    "last_name": address.last_name,
+                    "address_line1": address.address_line1,
+                    "address_line2": address.address_line2,
+                    "city": address.city,
+                    "state": address.state,
+                    "postal_code": address.postal_code,
+                    "country": address.country,
+                    "is_default": address.is_default,
+                }
+            )
+
+        if addresses:
+            exported_data["addresses"] = addresses
+
+        return exported_data
+
     def clean(self):
         """Custom validation for the model."""
         super().clean()
-        self.email = self.__class__.objects.normalize_email(self.email)
 
-        # Validation for deletion fields
-        if self.is_anonymized and not self.anonymized_at:
-            self.anonymized_at = timezone.now()
+        # Validate email uniqueness (case-insensitive)
+        if self.email:
+            self.email = self.email.lower()
 
-        if not self.is_active and self.deactivated_at is None:
-            # If user is being deactivated but deactivated_at is not set
-            pass  # Let the view handle this
+        # Ensure anonymized users have proper data
+        if self.is_anonymized:
+            if not self.email.endswith("@deleted.local"):
+                raise ValidationError("Anonymized users must have @deleted.local email")
+            if self.first_name != "Deleted" or self.last_name != "User":
+                raise ValidationError("Anonymized users must have 'Deleted User' name")
 
 
 class UserAddress(models.Model):
-    """
-    User shipping and billing addresses.
+    """User address model for shipping and billing."""
 
-    Supports multiple addresses per user with type classification.
-    """
-
-    ADDRESS_TYPES = [
-        ("shipping", _("Shipping")),
-        ("billing", _("Billing")),
-        ("both", _("Both")),
+    ADDRESS_TYPE_CHOICES = [
+        ("shipping", _("Shipping Address")),
+        ("billing", _("Billing Address")),
     ]
 
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="addresses", verbose_name=_("user"))
-
-    address_type = models.CharField(_("address type"), max_length=10, choices=ADDRESS_TYPES, default="both")
-
-    # Address fields
-    first_name = models.CharField(_("first name"), max_length=100)
-    last_name = models.CharField(_("last name"), max_length=100)
-    company = models.CharField(_("company"), max_length=100, blank=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="addresses")
+    address_type = models.CharField(_("address type"), max_length=20, choices=ADDRESS_TYPE_CHOICES)
+    first_name = models.CharField(_("first name"), max_length=150)
+    last_name = models.CharField(_("last name"), max_length=150)
     address_line1 = models.CharField(_("address line 1"), max_length=255)
     address_line2 = models.CharField(_("address line 2"), max_length=255, blank=True)
     city = models.CharField(_("city"), max_length=100)
-    state = models.CharField(_("state/province"), max_length=100)
+    state = models.CharField(_("state/province"), max_length=100, blank=True)
     postal_code = models.CharField(_("postal code"), max_length=20)
-    country = models.CharField(_("country"), max_length=2)  # ISO country code
-
+    country = models.CharField(_("country"), max_length=100)
     is_default = models.BooleanField(_("is default"), default=False)
     created_at = models.DateTimeField(_("created at"), auto_now_add=True)
     updated_at = models.DateTimeField(_("updated at"), auto_now=True)
 
     class Meta:
-        db_table = "user_addresses"
+        db_table = "accounts_useraddress"
         verbose_name = _("User Address")
         verbose_name_plural = _("User Addresses")
-        indexes = [
-            models.Index(fields=["user", "is_default"]),
-            models.Index(fields=["user", "address_type"]),
-        ]
         constraints = [
             models.UniqueConstraint(
                 fields=["user", "address_type"],
@@ -275,25 +382,25 @@ class UserAddress(models.Model):
                 name="unique_default_address_per_type",
             )
         ]
+        indexes = [
+            models.Index(fields=["user", "address_type"]),
+            models.Index(fields=["is_default"]),
+        ]
 
     def __str__(self) -> str:
-        return f"{self.first_name} {self.last_name} - {self.city}, {self.country}"
+        return f"{self.get_address_type_display()} for {self.user.email}"
 
 
 class BlacklistedToken(models.Model):
-    """
-    Store blacklisted JWT tokens for security.
-
-    Used for logout functionality and token invalidation.
-    """
+    """Model to track blacklisted JWT tokens."""
 
     token_jti = models.CharField(_("token JTI"), max_length=255, unique=True)
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="blacklisted_tokens", verbose_name=_("user"))
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="blacklisted_tokens")
     blacklisted_at = models.DateTimeField(_("blacklisted at"), auto_now_add=True)
     expires_at = models.DateTimeField(_("expires at"))
 
     class Meta:
-        db_table = "blacklisted_tokens"
+        db_table = "accounts_blacklistedtoken"
         verbose_name = _("Blacklisted Token")
         verbose_name_plural = _("Blacklisted Tokens")
         indexes = [
@@ -304,3 +411,8 @@ class BlacklistedToken(models.Model):
 
     def __str__(self) -> str:
         return f"Blacklisted token for {self.user.email}"
+
+    @property
+    def is_expired(self) -> bool:
+        """Check if the token has expired."""
+        return timezone.now() > self.expires_at
