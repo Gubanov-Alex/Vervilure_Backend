@@ -1,8 +1,10 @@
 import uuid
-import pytest
-from django.test import Client
+
 from django.contrib.auth import get_user_model
+from django.test import Client
 from django.utils import timezone
+
+import pytest
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -137,13 +139,14 @@ def unverified_tokens(unverified_user):
 @pytest.fixture
 def verification_token_generator():
     """Helper to generate fresh verification tokens."""
+
     def _generate_token(user):
         """Generate fresh verification token for user."""
         user.email_verification_token = uuid.uuid4()
         user.email_verification_sent_at = timezone.now()
         user.save(update_fields=["email_verification_token", "email_verification_sent_at"])
         return user.email_verification_token
-    
+
     return _generate_token
 
 
@@ -157,6 +160,7 @@ def expired_verification_user(user_factory, verification_token_generator):
     )
     # Set token as expired (25 hours ago)
     from datetime import timedelta
+
     user.email_verification_token = uuid.uuid4()
     user.email_verification_sent_at = timezone.now() - timedelta(hours=25)
     user.save(update_fields=["email_verification_token", "email_verification_sent_at"])
@@ -175,6 +179,7 @@ def transactional_db():
 def mock_email_backend():
     """Mock email backend for testing."""
     from unittest.mock import patch
+
     with patch("django.core.mail.send_mail") as mock_send:
         mock_send.return_value = True
         yield mock_send
@@ -184,6 +189,7 @@ def mock_email_backend():
 def mock_celery_task():
     """Mock Celery task execution."""
     from unittest.mock import patch
+
     with patch("src.apps.accounts.tasks.send_verification_email.delay") as mock_task:
         mock_task.return_value = "Task queued"
         yield mock_task
@@ -237,42 +243,42 @@ def performance_test_users(user_factory):
 @pytest.fixture
 def url_resolver():
     """Helper for URL resolution testing."""
-    from django.urls import reverse, NoReverseMatch
-    
+    from django.urls import NoReverseMatch, reverse
+
     def _resolve_url(pattern_name, *args, **kwargs):
         """Safely resolve URL pattern."""
         try:
             return reverse(pattern_name, args=args, kwargs=kwargs)
         except NoReverseMatch:
             return None
-    
+
     return _resolve_url
 
 
 @pytest.fixture
 def verification_url_finder():
     """Find working verification URL from multiple patterns."""
-    from django.urls import reverse, NoReverseMatch
-    
+    from django.urls import NoReverseMatch, reverse
+
     def _find_verification_url():
         """Find working email verification URL."""
         patterns = [
             "auth:verify_email",
-            "accounts:verify_email", 
+            "accounts:verify_email",
             "auth:auth-verify-email",
             "verify_email",
             "auth-verify-email",
         ]
-        
+
         for pattern in patterns:
             try:
                 return reverse(pattern)
             except NoReverseMatch:
                 continue
-        
+
         # Fallback to direct endpoint
         return "/api/v1/auth/email/verify/"
-    
+
     return _find_verification_url
 
 
