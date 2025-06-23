@@ -18,9 +18,6 @@ class UserManager(BaseUserManager):
         if not email:
             raise ValueError("The Email field must be set")
 
-        last_id = self.model.objects.aggregate(Max("id"))["id__max"]
-        next_id = 1 if last_id is None else last_id + 1
-        extra_fields["id"] = next_id
         email = self.normalize_email(email)
         user = self.model(email=email, **extra_fields)
         user.set_password(password)
@@ -50,7 +47,14 @@ class UserManager(BaseUserManager):
 class User(AbstractUser):
     """Extended user model with additional fields for e-commerce platform."""
 
-    id = models.BigAutoField(primary_key=True, verbose_name=_("ID"), db_index=True)
+    # UUID primary key for better security and distribution
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False,
+        verbose_name=_("ID"),
+        help_text=_("Unique identifier for the user")
+    )
     email_verification_token = models.UUIDField(default=uuid.uuid4, unique=True)
     email_verification_sent_at = models.DateTimeField(null=True, blank=True)
     is_email_verified = models.BooleanField(default=False)

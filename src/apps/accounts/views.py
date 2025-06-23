@@ -36,14 +36,12 @@ from .serializers import (
 )
 from .throttles import LoginRateThrottle, PasswordChangeRateThrottle, RegistrationRateThrottle
 
-# ВАЖНО: Импортируем Celery задачи в начале файла с proper error handling
 try:
     from .tasks import send_password_reset_email, send_verification_email
 
     CELERY_TASKS_AVAILABLE = True
     logger_info = "Celery tasks imported successfully"
 except ImportError as e:
-    # Fallback для случаев, когда Celery недоступен (например, в тестах)
     send_verification_email = None
     send_password_reset_email = None
     CELERY_TASKS_AVAILABLE = False
