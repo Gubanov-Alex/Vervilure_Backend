@@ -1,6 +1,6 @@
 """
 Test-specific URL configuration for proper namespace resolution.
-This file ensures that all authentication endpoints have correct namespaces.
+This file ensures that all authentication and user management endpoints have correct namespaces.
 """
 
 from django.contrib import admin
@@ -13,7 +13,8 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     # Primary authentication endpoints with 'auth' namespace
     path("api/v1/auth/", include(("src.apps.accounts.auth_urls", "auth"), namespace="auth")),
-    path("api/v1/users/", include("src.apps.accounts.user_urls")),
+    # FIXED: Add proper namespace for user management endpoints
+    path("api/v1/users/", include(("src.apps.accounts.user_urls", "users"), namespace="users")),
     # Legacy namespace for backward compatibility with existing tests
     path("accounts/", include(("src.apps.accounts.auth_urls", "accounts"), namespace="accounts")),
     # Alternative auth endpoints for different test scenarios
@@ -41,6 +42,7 @@ import sys
 if "pytest" in sys.modules or "test" in sys.argv:
     print("\n[Test URLs] Available namespaces:")
     print("  - auth:* (api/v1/auth/)")
+    print("  - users:* (api/v1/users/) [FIXED]")
     print("  - accounts:* (accounts/)")
     print("  - auth-alt:* (auth/)")
     print("  - Direct patterns available")

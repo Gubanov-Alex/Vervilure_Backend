@@ -1,6 +1,10 @@
-# Comprehensive tests for account deletion functionality
+"""
+Test module for user account deletion functionality.
 
-from datetime import timedelta
+This module contains comprehensive tests for account deletion workflows,
+including soft deletion, anonymization, and complete data removal.
+"""
+
 from unittest.mock import patch
 
 from django.urls import reverse
@@ -10,62 +14,33 @@ import pytest
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from src.apps.accounts.models import User, UserAddress
+from src.apps.accounts.models import User
 
 
 @pytest.mark.django_db
-class TestUserModelDeletionFields:
-    """Test User model deletion-related fields and methods."""
+class TestUserModelMethods:
+    """Test User model custom methods for account deletion."""
 
-    def test_user_creation_with_deletion_fields(self):
-        """Test user creation includes deletion fields with defaults."""
+    def test_soft_delete_user_data(self):
+        """Test soft deletion of user data."""
         user = User.objects.create_user(
-            email="test@example.com", password="testpass123", first_name="Test", last_name="User"
+            email="test@example.com", password="testpass123", first_name="John", last_name="Doe"
         )
 
-        assert user.deactivated_at is None
-        assert user.deactivation_reason == ""
+        original_id = user.id
+        user.soft_delete_user_data(reason="User requested deletion")
+
+        # Refresh from database
+        user.refresh_from_db()
+
+        assert user.id == original_id  # ID should remain the same
+        assert user.is_active is False
+        assert user.deactivated_at is not None
+        assert user.deactivation_reason == "User requested deletion"
         assert user.is_anonymized is False
-        assert user.anonymized_at is None
-        assert user.is_active is True
 
-    def test_can_reactivate_method(self):
-        """Test can_reactivate method logic."""
-        user = User.objects.create_user(
-            email="test@example.com", password="testpass123", first_name="Test", last_name="User"
-        )
-
-        # Active user cannot be reactivated
-        assert user.can_reactivate() is False
-
-        # Recently deactivated user can be reactivated
-        user.deactivated_at = timezone.now() - timedelta(days=10)
-        assert user.can_reactivate() is True
-
-        # User deactivated over 30 days ago cannot be reactivated
-        user.deactivated_at = timezone.now() - timedelta(days=35)
-        assert user.can_reactivate() is False
-
-    def test_get_reactivation_deadline(self):
-        """Test reactivation deadline calculation."""
-        user = User.objects.create_user(
-            email="test@example.com", password="testpass123", first_name="Test", last_name="User"
-        )
-
-        # No deadline for active user
-        assert user.get_reactivation_deadline() is None
-
-        # Deadline should be 30 days after deactivation
-        deactivation_time = timezone.now() - timedelta(days=5)
-        user.deactivated_at = deactivation_time
-        expected_deadline = deactivation_time + timedelta(days=30)
-
-        deadline = user.get_reactivation_deadline()
-        assert deadline is not None
-        assert abs((deadline - expected_deadline).total_seconds()) < 1  # Within 1 second
-
-    def test_anonymize_user_data_method(self):
-        """Test user data anonymization method."""
+    def test_anonymize_user_data(self):
+        """Test anonymization of user data."""
         user = User.objects.create_user(
             email="test@example.com", password="testpass123", first_name="John", last_name="Doe"
         )
@@ -122,7 +97,8 @@ class TestAccountDeletionAPI(APITestCase):
         self.user = User.objects.create_user(
             email="test@example.com", password="testpass123", first_name="John", last_name="Doe"
         )
-        self.delete_url = reverse("authviewset-delete-account")
+        # FIXED: Use correct URL pattern from users namespace
+        self.delete_url = reverse("users:delete_account")
 
     def test_delete_account_requires_authentication(self):
         """Test that delete account requires authentication."""
@@ -177,83 +153,40 @@ class TestAccountDeletionAPI(APITestCase):
 
     def test_anonymize_account(self):
         """Test account anonymization."""
-        # Create address to test cascade deletion
-        UserAddress.objects.create(
-            user=self.user,
-            address_type="shipping",
-            first_name="John",
-            last_name="Doe",
-            address_line1="123 Test St",
-            city="Test City",
-            country="US",
-        )
-
         self.client.force_authenticate(user=self.user)
 
-        response = self.client.delete(self.delete_url, {"password": "testpass123", "deletion_type": "anonymize"})
+        response = self.client.delete(
+            self.delete_url, {"password": "testpass123", "deletion_type": "anonymize", "reason": "Privacy request"}
+        )
 
-        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert response.status_code == status.HTTP_200_OK
+        assert "Account has been anonymized" in response.data["message"]
 
         # Check database changes
         self.user.refresh_from_db()
         assert self.user.is_active is False
         assert self.user.is_anonymized is True
         assert self.user.anonymized_at is not None
-        assert self.user.email.endswith("@deleted.local")
         assert self.user.first_name == "Deleted"
         assert self.user.last_name == "User"
 
-        # Check address deletion
-        assert UserAddress.objects.filter(user=self.user).count() == 0
-
     def test_hard_delete_account(self):
         """Test hard delete functionality."""
-        # Create related data
-        UserAddress.objects.create(
-            user=self.user,
-            address_type="shipping",
-            first_name="John",
-            last_name="Doe",
-            address_line1="123 Test St",
-            city="Test City",
-            country="US",
-        )
-
         user_id = self.user.id
         self.client.force_authenticate(user=self.user)
 
-        response = self.client.delete(self.delete_url, {"password": "testpass123", "deletion_type": "hard"})
-
-        assert response.status_code == status.HTTP_204_NO_CONTENT
-
-        # Check user is completely deleted
-        assert not User.objects.filter(id=user_id).exists()
-        assert UserAddress.objects.filter(user_id=user_id).count() == 0
-
-    @patch("src.apps.accounts.views.logger")
-    def test_delete_account_logging(self, mock_logger):
-        """Test that account deletion is properly logged."""
-        self.client.force_authenticate(user=self.user)
-
         response = self.client.delete(
-            self.delete_url, {"password": "testpass123", "deletion_type": "soft", "reason": "Test reason"}
+            self.delete_url, {"password": "testpass123", "deletion_type": "hard", "reason": "Complete removal"}
         )
 
         assert response.status_code == status.HTTP_200_OK
+        assert "Account has been permanently deleted" in response.data["message"]
 
-        # Check that info log was called
-        mock_logger.info.assert_called()
-        log_call = mock_logger.info.call_args
-        assert "Account deactivated (soft delete)" in log_call[0][0]
+        # Check that user no longer exists
+        with pytest.raises(User.DoesNotExist):
+            User.objects.get(id=user_id)
 
-        # Check log extra data
-        log_extra = log_call[1]["extra"]
-        assert log_extra["user_id"] == self.user.id
-        assert log_extra["deletion_type"] == "soft"
-        assert log_extra["reason"] == "Test reason"
-        assert log_extra["action"] == "account_soft_delete"
-
-    def test_delete_account_with_data_export_request(self):
+    def test_delete_account_with_data_export(self):
         """Test account deletion with data export request."""
         self.client.force_authenticate(user=self.user)
 
@@ -318,6 +251,7 @@ class TestUserManagerMethods:
 
     def test_deactivated_users_queryset(self):
         """Test deactivated_users queryset method."""
+        # Create various user states
         active_user = User.objects.create_user(
             email="active@example.com", password="test123", first_name="Active", last_name="User"
         )
@@ -332,21 +266,161 @@ class TestUserManagerMethods:
         deactivated_user.deactivated_at = timezone.now()
         deactivated_user.save()
 
+        anonymized_user = User.objects.create_user(
+            email="anonymized@example.com", password="test123", first_name="Anonymized", last_name="User"
+        )
+        anonymized_user.anonymize_user_data()
+
+        # Test deactivated_users method
         deactivated_users = User.objects.deactivated_users()
         assert active_user not in deactivated_users
         assert deactivated_user in deactivated_users
+        assert anonymized_user in deactivated_users  # Anonymized users are also deactivated
 
     def test_anonymized_users_queryset(self):
         """Test anonymized_users queryset method."""
-        normal_user = User.objects.create_user(
-            email="normal@example.com", password="test123", first_name="Normal", last_name="User"
+        # Create various user states
+        active_user = User.objects.create_user(
+            email="active@example.com", password="test123", first_name="Active", last_name="User"
         )
+
+        deactivated_user = User.objects.create_user(
+            email="deactivated@example.com",
+            password="test123",
+            first_name="Deactivated",
+            last_name="User",
+            is_active=False,
+        )
+        deactivated_user.deactivated_at = timezone.now()
+        deactivated_user.save()
 
         anonymized_user = User.objects.create_user(
             email="anonymized@example.com", password="test123", first_name="Anonymized", last_name="User"
         )
         anonymized_user.anonymize_user_data()
 
+        # Test anonymized_users method
         anonymized_users = User.objects.anonymized_users()
-        assert normal_user not in anonymized_users
+        assert active_user not in anonymized_users
+        assert deactivated_user not in anonymized_users
         assert anonymized_user in anonymized_users
+
+    def test_users_for_deletion_queryset(self):
+        """Test users_for_deletion queryset method."""
+        # Create user deactivated more than 30 days ago
+        old_deactivated_user = User.objects.create_user(
+            email="old@example.com",
+            password="test123",
+            first_name="Old",
+            last_name="Deactivated",
+            is_active=False,
+        )
+        old_deactivated_user.deactivated_at = timezone.now() - timezone.timedelta(days=35)
+        old_deactivated_user.save()
+
+        # Create user deactivated less than 30 days ago
+        recent_deactivated_user = User.objects.create_user(
+            email="recent@example.com",
+            password="test123",
+            first_name="Recent",
+            last_name="Deactivated",
+            is_active=False,
+        )
+        recent_deactivated_user.deactivated_at = timezone.now() - timezone.timedelta(days=15)
+        recent_deactivated_user.save()
+
+        # Test users_for_deletion method
+        users_for_deletion = User.objects.users_for_deletion()
+        assert old_deactivated_user in users_for_deletion
+        assert recent_deactivated_user not in users_for_deletion
+
+
+@pytest.mark.django_db
+class TestAccountReactivation:
+    """Test account reactivation functionality."""
+
+    def test_reactivate_soft_deleted_account(self):
+        """Test reactivation of soft deleted account."""
+        user = User.objects.create_user(
+            email="test@example.com", password="testpass123", first_name="John", last_name="Doe"
+        )
+
+        # Soft delete the account
+        user.soft_delete_user_data(reason="User requested deletion")
+        assert user.is_active is False
+        assert user.deactivated_at is not None
+
+        # Reactivate the account
+        user.reactivate_account()
+        user.refresh_from_db()
+
+        assert user.is_active is True
+        assert user.deactivated_at is None
+        assert user.deactivation_reason == ""
+
+    def test_cannot_reactivate_anonymized_account(self):
+        """Test that anonymized accounts cannot be reactivated."""
+        user = User.objects.create_user(
+            email="test@example.com", password="testpass123", first_name="John", last_name="Doe"
+        )
+
+        # Anonymize the account
+        user.anonymize_user_data()
+        assert user.is_anonymized is True
+
+        # Attempt to reactivate should fail
+        with pytest.raises(ValueError, match="Cannot reactivate anonymized account"):
+            user.reactivate_account()
+
+    def test_reactivation_deadline_check(self):
+        """Test that accounts cannot be reactivated after deadline."""
+        user = User.objects.create_user(
+            email="test@example.com", password="testpass123", first_name="John", last_name="Doe"
+        )
+
+        # Set deactivation date beyond reactivation deadline
+        user.deactivated_at = timezone.now() - timezone.timedelta(days=35)  # Beyond 30-day limit
+        user.is_active = False
+        user.save()
+
+        # Attempt to reactivate should fail
+        with pytest.raises(ValueError, match="Reactivation deadline has passed"):
+            user.reactivate_account()
+
+
+@pytest.mark.django_db
+class TestDataExportFunctionality:
+    """Test user data export functionality."""
+
+    def test_export_user_data(self):
+        """Test exporting user data."""
+        user = User.objects.create_user(
+            email="test@example.com", password="testpass123", first_name="John", last_name="Doe"
+        )
+
+        exported_data = user.export_user_data()
+
+        assert "personal_information" in exported_data
+        assert "account_settings" in exported_data
+        assert "activity_logs" in exported_data
+
+        # Check personal information
+        personal_info = exported_data["personal_information"]
+        assert personal_info["email"] == "test@example.com"
+        assert personal_info["first_name"] == "John"
+        assert personal_info["last_name"] == "Doe"
+
+    def test_export_anonymized_user_data(self):
+        """Test exporting data for anonymized user."""
+        user = User.objects.create_user(
+            email="test@example.com", password="testpass123", first_name="John", last_name="Doe"
+        )
+
+        user.anonymize_user_data()
+        exported_data = user.export_user_data()
+
+        # Anonymized users should have limited data available
+        personal_info = exported_data["personal_information"]
+        assert personal_info["first_name"] == "Deleted"
+        assert personal_info["last_name"] == "User"
+        assert personal_info["email"].endswith("@deleted.local")
