@@ -235,6 +235,31 @@ dbrestore: ## Restore database from latest backup
 .PHONY: bash
 bash: ## Open bash shell in web container
 	$(DC_EXEC) web bash
+validate-env:
+	@echo "Validating environment configuration..."
+	@docker-compose run --rm web poetry run python manage.py check --deploy --settings=config.settings
+	@echo "✓ Environment configuration is valid"
+# Quick fixes
+fix-docker:
+	@echo "Fixing Docker build issues..."
+	@if [ ! -f README.md ]; then echo "# Vervilure E-commerce Platform" > README.md; echo "Created README.md"; fi
+	@echo "Cleaning Docker cache..."
+	docker builder prune -f
+	@echo "Rebuilding..."
+	$(MAKE) build
+
+# Debugging commands
+debug-web:
+	@echo "Web container logs:"
+	docker-compose logs web
+
+debug-celery:
+	@echo "Celery container logs:"
+	docker-compose logs celery
+
+debug-all:
+	@echo "All container logs:"
+	docker-compose logs
 
 .PHONY: redis-cli
 redis-cli: ## Open Redis CLI
