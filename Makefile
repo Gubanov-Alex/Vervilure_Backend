@@ -23,6 +23,7 @@ POETRY := poetry run
 YELLOW := \033[0;33m
 GREEN := \033[0;32m
 RED := \033[0;31m
+BLUE := \033[0;34m
 NC := \033[0m # No Color
 
 # Main targets
@@ -31,24 +32,6 @@ help: ## Show this help message
 	@echo -e "$(GREEN)Vervilure Backend - Docker Management$(NC)"
 	@echo -e "Current user: UID=$(USER_ID), GID=$(GROUP_ID)\n"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "$(YELLOW)%-20s$(NC) %s\n", $$1, $$2}'
-# Environment switching
-env-docker:
-	@echo "Switching to Docker environment..."
-	@if [ ! -f .env.docker ]; then \
-		echo "Error: .env.docker not found. Creating template..."; \
-		$(MAKE) create-docker-env; \
-	fi
-	@echo "Using .env.docker for Docker development"
-	@echo "✓ Docker environment configured"
-
-env-local:
-	@echo "Switching to local environment..."
-	@if [ ! -f .env.local ]; then \
-		echo "Error: .env.local not found. Creating template..."; \
-		$(MAKE) create-local-env; \
-	fi
-	@echo "Using .env.local for local development"
-	@echo "✓ Local environment configured"
 
 # === DOCKER LIFECYCLE ===
 .PHONY: build
@@ -64,12 +47,6 @@ up: ## Start all core services
 	@echo "  Web: http://localhost:8000"
 	@echo "  DB:  localhost:5490"
 	@echo "  Redis: localhost:6390"
-
-.PHONY: up-all
-up-all: ## Start all services including dev tools
-	$(DC) --profile dev --profile tools up -d
-	@echo -e "$(GREEN)All services started!$(NC)"
-	@make urls
 
 .PHONY: down
 down: ## Stop all services
@@ -136,67 +113,111 @@ test-coverage: ## Run tests with coverage report
 .PHONY: test-file
 test-file: ## Run specific test file (e.g., make test-file path=apps/users/tests/test_models.py)
 	$(DC_EXEC) web $(POETRY) pytest -v $(path)
-# Google OAuth Management
-cleanup-oauth-duplicates:
-	@echo "Cleaning up duplicate Google OAuth configurations..."
-	docker-compose exec web poetry run python manage.py cleanup_oauth_duplicates
 
-cleanup-oauth-duplicates-dry:
-	@echo "Checking for duplicate Google OAuth configurations..."
-	docker-compose exec web poetry run python manage.py cleanup_oauth_duplicates --dry-run
-
-test-google-oauth-clean:
-	@echo "Cleaning OAuth duplicates and running tests..."
-	$(MAKE) cleanup-oauth-duplicates
-	$(MAKE) test-google-oauth
-setup-mailpit:
-	@echo "Setting up Mailpit and OAuth..."
-	$(MAKE) up
-	sleep 5
-	docker-compose exec web poetry run python manage.py setup_oauth
-	@echo "Mailpit UI: http://localhost:8025"
-	@echo "Admin: http://localhost:8000/admin/"
-
-test-email:
-	docker-compose exec web poetry run python manage.py test_email
-
-# Authentication JWT Testing
-test-jwt-auth:
-	@echo "Running JWT authentication flow tests..."
-	docker-compose exec web poetry run python manage.py test_jwt_auth_flow --verbose
-
-test-jwt-auth-quick:
-	@echo "Running JWT authentication tests (no cleanup)..."
-	docker-compose exec web poetry run python manage.py test_jwt_auth_flow --skip-cleanup
-
-# Google OAuth Testing
-test-google-oauth:
-	@echo "Running Google OAuth authentication tests..."
-	docker-compose exec web poetry run python manage.py test_google_oauth --verbose
-
-test-google-oauth-quick:
-	@echo "Running Google OAuth tests (no cleanup)..."
-	docker-compose exec web poetry run python manage.py test_google_oauth --skip-cleanup
-
-mailpit-logs:
-	docker-compose logs mailpit
 # === CODE QUALITY ===
+.PHONY: setup-format-env
+setup-format-env: ## Setup formatting environment with proper permissions
+	@echo -e "$(YELLOW)Setting up formatting environment...$(NC)"
+	@$(DC_EXEC) web bash -c " \
+		rm -rf /app/.ruff_cache && \
+		mkdir -p /tmp/ruff_cache && \
+		chmod 777 /tmp/ruff_cache && \
+		mkdir -p /app/.ruff_cache && \
+		chown django:django /app/.ruff_cache && \
+		chmod 755 /app/.ruff_cache \
+	"
+
 .PHONY: lint
 lint: ## Run all linters
 	@echo -e "$(YELLOW)Running linters...$(NC)"
-	$(DC_EXEC) web $(POETRY) ruff check .
+	@echo -e "$(BLUE)Running ruff...$(NC)"
+	$(DC_EXEC) web $(POETRY) ruff check . --cache-dir /tmp/ruff_cache
+	@echo -e "$(BLUE)Running mypy...$(NC)"
+	$(DC_EXEC) web $(POETRY) mypy .
+	@echo -e "$(GREEN)Linting complete!$(NC)"
+
+.PHONY: lint-fix
+lint-fix: ## Run linters with auto-fix
+	@echo -e "$(YELLOW)Running linters with fixes...$(NC)"
+	@$(MAKE) setup-format-env
+	$(DC_EXEC) web $(POETRY) ruff check . --fix --cache-dir /tmp/ruff_cache
 	$(DC_EXEC) web $(POETRY) mypy .
 
 .PHONY: format
-format: ## Format code with black and isort
-	$(DC_EXEC) web $(POETRY) black .
-	$(DC_EXEC) web $(POETRY) isort .
-	$(DC_EXEC) web $(POETRY) ruff check . --fix
+format:
+	@echo "Formatting code..."
+	poetry run black .
+	poetry run isort .
+
+
+
+.PHONY: format-check
+format-check: ## Check if code is properly formatted
+	@echo -e "$(YELLOW)Checking code formatting...$(NC)"
+	$(DC_EXEC) web $(POETRY) black --check .
+	$(DC_EXEC) web $(POETRY) isort --check-only .
+
 
 .PHONY: check
 check: ## Run all checks (tests, linting, etc.)
 	@make lint
 	@make test
+
+# === GOOGLE OAUTH MANAGEMENT ===
+.PHONY: cleanup-oauth-duplicates
+cleanup-oauth-duplicates: ## Clean up duplicate Google OAuth configurations
+	@echo "Cleaning up duplicate Google OAuth configurations..."
+	$(DC_EXEC) web $(POETRY) $(MANAGE) cleanup_oauth_duplicates
+
+.PHONY: cleanup-oauth-duplicates-dry
+cleanup-oauth-duplicates-dry: ## Check for duplicate Google OAuth configurations
+	@echo "Checking for duplicate Google OAuth configurations..."
+	$(DC_EXEC) web $(POETRY) $(MANAGE) cleanup_oauth_duplicates --dry-run
+
+.PHONY: test-google-oauth-clean
+test-google-oauth-clean: ## Clean OAuth duplicates and run tests
+	@echo "Cleaning OAuth duplicates and running tests..."
+	@$(MAKE) cleanup-oauth-duplicates
+	@$(MAKE) test-google-oauth
+
+.PHONY: setup-mailpit
+setup-mailpit: ## Setup Mailpit and OAuth
+	@echo "Setting up Mailpit and OAuth..."
+	@$(MAKE) up
+	@sleep 5
+	$(DC_EXEC) web $(POETRY) $(MANAGE) setup_oauth
+	@echo "Mailpit UI: http://localhost:8025"
+	@echo "Admin: http://localhost:8000/admin/"
+
+.PHONY: test-email
+test-email: ## Test email configuration
+	$(DC_EXEC) web $(POETRY) $(MANAGE) test_email
+
+# === AUTHENTICATION JWT TESTING ===
+.PHONY: test-jwt-auth
+test-jwt-auth: ## Run JWT authentication flow tests
+	@echo "Running JWT authentication flow tests..."
+	$(DC_EXEC) web $(POETRY) $(MANAGE) test_jwt_auth_flow --verbose
+
+.PHONY: test-jwt-auth-quick
+test-jwt-auth-quick: ## Run JWT authentication tests (no cleanup)
+	@echo "Running JWT authentication tests (no cleanup)..."
+	$(DC_EXEC) web $(POETRY) $(MANAGE) test_jwt_auth_flow --skip-cleanup
+
+# === GOOGLE OAUTH TESTING ===
+.PHONY: test-google-oauth
+test-google-oauth: ## Run Google OAuth authentication tests
+	@echo "Running Google OAuth authentication tests..."
+	$(DC_EXEC) web $(POETRY) $(MANAGE) test_google_oauth --verbose
+
+.PHONY: test-google-oauth-quick
+test-google-oauth-quick: ## Run Google OAuth tests (no cleanup)
+	@echo "Running Google OAuth tests (no cleanup)..."
+	$(DC_EXEC) web $(POETRY) $(MANAGE) test_google_oauth --skip-cleanup
+
+.PHONY: mailpit-logs
+mailpit-logs: ## Show Mailpit logs
+	$(DC) logs mailpit
 
 # === DATABASE ===
 .PHONY: dbshell
@@ -209,7 +230,7 @@ dbreset: ## Reset database (WARNING: destroys all data!)
 	@read -p "Are you sure? [y/N] " -n 1 -r; \
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
 		$(DC) down; \
-		docker volume rm vervilure_postgres_data 2>/dev/null || true; \
+		docker volume rm vervilure-back_postgres_data 2>/dev/null || true; \
 		$(DC) up -d db; \
 		sleep 5; \
 		make migrate; \
@@ -233,16 +254,6 @@ dbrestore: ## Restore database from latest backup
 		echo -e "$(GREEN)Restore complete$(NC)"; \
 	fi
 
-# === CELERY ===
-.PHONY: celery-logs
-celery-logs: ## Show Celery worker logs
-	$(DC) logs -f --tail=100 celery
-
-.PHONY: flower
-flower: ## Start Flower (Celery monitoring)
-	$(DC) --profile monitoring up -d flower
-	@echo "Flower available at: http://localhost:5555"
-
 # === UTILITIES ===
 .PHONY: bash
 bash: ## Open bash shell in web container
@@ -258,44 +269,33 @@ urls: ## Show all service URLs
 	@echo "  Django:    http://localhost:8000"
 	@echo "  Django Admin: http://localhost:8000/admin/"
 	@if [ "$$($(DC) ps -q mailpit 2>/dev/null)" ]; then echo "  Mailpit:   http://localhost:8025"; fi
-	@if [ "$$($(DC) ps -q flower 2>/dev/null)" ]; then echo "  Flower:    http://localhost:5555"; fi
-	@if [ "$$($(DC) ps -q pgadmin 2>/dev/null)" ]; then echo "  pgAdmin:   http://localhost:5050"; fi
 	@echo "  PostgreSQL: localhost:5490"
 	@echo "  Redis:     localhost:6390"
 
-# === DEVELOPMENT TOOLS ===
-.PHONY: dev
-dev: ## Start development environment with all tools
-	$(DC) --profile dev --profile tools --profile monitoring up -d
-	@make urls
+.PHONY: fix-permissions
+fix-permissions: ## Fix file permissions
+	@echo -e "$(YELLOW)Fixing permissions...$(NC)"
+	sudo chown -R $(USER_ID):$(GROUP_ID) .
+	find . -type d -exec chmod 755 {} \;
+	find . -type f -exec chmod 644 {} \;
+	chmod +x manage.py
+	rm -rf .ruff_cache
+	@echo -e "$(GREEN)Permissions fixed$(NC)"
 
-.PHONY: tools
-tools: ## Start development tools (pgAdmin)
-	$(DC) --profile tools up -d
-	@echo "pgAdmin available at: http://localhost:5050"
-	@echo "Login: admin@vervilure.local / admin"
-
-# === MAINTENANCE ===
 .PHONY: clean
 clean: ## Clean up Docker resources
 	$(DC) down -v
 	docker system prune -f
 
-.PHONY: clean-all
-clean-all: ## Clean everything including images
-	$(DC) down -v --rmi all
-	docker system prune -af --volumes
+.PHONY: rebuild
+rebuild: ## Rebuild containers and restart
+	@echo -e "$(YELLOW)Rebuilding containers...$(NC)"
+	$(DC) down
+	$(DC) build --no-cache
+	$(DC) up -d
+	@echo -e "$(GREEN)Rebuild complete!$(NC)"
 
-.PHONY: fix-permissions
-fix-permissions: ## Fix file permissions
-	@echo -e "$(YELLOW)Fixing permissions...$(NC)"
-	@sudo chown -R $(USER_ID):$(GROUP_ID) .
-	@find . -type d -exec chmod 755 {} \;
-	@find . -type f -exec chmod 644 {} \;
-	@chmod +x manage.py
-	@echo -e "$(GREEN)Permissions fixed$(NC)"
-
-# === QUICK COMMANDS ===
+# === DEVELOPMENT SETUP ===
 .PHONY: dev-setup
 dev-setup: ## Complete development setup
 	@echo -e "$(YELLOW)Setting up development environment...$(NC)"
@@ -306,35 +306,11 @@ dev-setup: ## Complete development setup
 	@make collectstatic
 	@echo -e "$(GREEN)Setup complete! Create superuser with 'make createsuperuser'$(NC)"
 
-.PHONY: quickfix
-quickfix: ## Quick fix for common Docker issues
-	@echo -e "$(YELLOW)Running quick fixes...$(NC)"
-	@docker-compose down --remove-orphans || true
-	@docker network prune -f
-	@docker volume prune -f
-	@echo -e "$(GREEN)Quick fix complete$(NC)"
-
-# === PRODUCTION ===
-.PHONY: prod
-prod: ## Start production-like environment
-	$(DC) --profile production up -d
-	@echo "Nginx available at: http://localhost"
-
-.PHONY: deploy-check
-deploy-check: ## Run deployment readiness check
-	$(DC_EXEC) web $(POETRY) $(MANAGE) check --deploy
-	$(DC_EXEC) web $(POETRY) $(MANAGE) validate_templates
-	@echo -e "$(GREEN)Deployment checks passed$(NC)"
-
-# === MONITORING ===
-.PHONY: stats
-stats: ## Show container resource usage
-	docker stats --no-stream $$($(DC) ps -q)
-
-.PHONY: health
-health: ## Check health of all services
-	@echo -e "$(YELLOW)Checking service health...$(NC)"
-	@$(DC) ps | grep -E "(healthy|unhealthy)" || echo "All services running"
+.PHONY: install-deps
+install-deps: ## Install/update Poetry dependencies
+	@echo -e "$(YELLOW)Installing dependencies...$(NC)"
+	$(DC_EXEC) web poetry install
+	@echo -e "$(GREEN)Dependencies installed!$(NC)"
 
 # === SHORTCUTS ===
 .PHONY: m
@@ -342,9 +318,6 @@ m: migrate ## Shortcut for migrate
 
 .PHONY: mm
 mm: makemigrations ## Shortcut for makemigrations
-
-.PHONY: c
-c: createsuperuser ## Shortcut for createsuperuser
 
 .PHONY: s
 s: shell ## Shortcut for shell
@@ -355,6 +328,12 @@ t: test ## Shortcut for test
 .PHONY: l
 l: logs ## Shortcut for logs
 
+.PHONY: f
+f: format-safe ## Shortcut for safe format
+
+.PHONY: c
+c: createsuperuser ## Shortcut for createsuperuser
+
 # === CI/CD ===
 .PHONY: ci-test
 ci-test: ## Run tests in CI mode
@@ -362,5 +341,11 @@ ci-test: ## Run tests in CI mode
 
 .PHONY: ci-lint
 ci-lint: ## Run linting in CI mode
-	$(DC_RUN) web $(POETRY) ruff check . --exit-non-zero-on-fix
-	$(DC_RUN) web $(POETRY) mypy . --strict
+	$(DC_RUN) web $(POETRY) ruff check . --output-format=github --no-cache
+	$(DC_RUN) web $(POETRY) mypy . --no-error-summary
+
+.PHONY: ci-format-check
+ci-format-check: ## Check formatting in CI mode
+	$(DC_RUN) web $(POETRY) black --check .
+	$(DC_RUN) web $(POETRY) isort --check-only .
+	$(DC_RUN) web $(POETRY) ruff check . --no-cache

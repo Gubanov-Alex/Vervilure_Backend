@@ -1,12 +1,8 @@
 from django.urls import include, path
+
 from rest_framework.routers import DefaultRouter
 
-from .jwt_views import (
-    JWTTokenBlacklistView,
-    JWTTokenObtainPairView,
-    JWTTokenRefreshView,
-    JWTTokenVerifyView,
-)
+from .jwt_views import JWTTokenBlacklistView, JWTTokenObtainPairView, JWTTokenRefreshView, JWTTokenVerifyView
 from .views import AuthViewSet
 
 # Authentication router for organized endpoints

@@ -1,5 +1,6 @@
-from allauth.socialaccount.models import SocialApp
 from django.core.management.base import BaseCommand
+
+from allauth.socialaccount.models import SocialApp
 
 
 class Command(BaseCommand):

@@ -1,9 +1,10 @@
 """Tests for Django Admin interface"""
 
-import pytest
 from django.contrib.admin.sites import AdminSite
 from django.contrib.auth import get_user_model
 from django.test import RequestFactory
+
+import pytest
 
 User = get_user_model()
 

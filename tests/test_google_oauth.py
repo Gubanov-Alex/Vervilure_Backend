@@ -3,10 +3,11 @@
 from io import StringIO
 from unittest.mock import patch
 
-import pytest
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.core.management.base import CommandError
+
+import pytest
 
 User = get_user_model()
 

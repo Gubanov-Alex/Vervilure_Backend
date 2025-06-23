@@ -3,7 +3,6 @@ import logging
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, Optional, Protocol
 
-import requests
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.sites.models import Site
@@ -12,6 +11,8 @@ from django.template.exceptions import TemplateDoesNotExist
 from django.template.loader import get_template
 from django.utils import timezone
 from django.utils.html import strip_tags
+
+import requests
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -265,8 +266,9 @@ class EmailTester:
             EmailTestResult with operation details
         """
         try:
-            from allauth.account.utils import send_email_confirmation
             from django.test import RequestFactory
+
+            from allauth.account.utils import send_email_confirmation
 
             # Create proper request object using RequestFactory
             factory = RequestFactory()

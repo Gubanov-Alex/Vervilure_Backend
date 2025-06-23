@@ -2,6 +2,7 @@ import logging
 
 from django.core.management.base import BaseCommand
 from django.utils import timezone
+
 from src.core.testing.google_oauth_tester import GoogleOAuthTester
 
 logger = logging.getLogger(__name__)
@@ -98,8 +99,9 @@ class Command(BaseCommand):
 
     def _cleanup_oauth_test_data(self):
         """Clean up Google OAuth test data."""
-        from allauth.socialaccount.models import SocialAccount
         from django.contrib.auth import get_user_model
+
+        from allauth.socialaccount.models import SocialAccount
 
         User = get_user_model()
 

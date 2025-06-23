@@ -1,5 +1,3 @@
-version: '3.8'
-
 x-common-variables: &common-variables
   TZ: Europe/Kiev
   LANG: C.UTF-8
@@ -8,7 +6,6 @@ services:
   db:
     image: postgres:15-alpine
     container_name: vervilure_db
-    # Remove user setting for PostgreSQL - it needs to run as postgres user
     environment:
       <<: *common-variables
       POSTGRES_DB: test_db
@@ -32,7 +29,6 @@ services:
   redis:
     image: redis:7-alpine
     container_name: vervilure_redis
-    # Remove user setting for Redis - it needs proper permissions
     environment:
       <<: *common-variables
     ports:
@@ -66,7 +62,7 @@ services:
       MP_SMTP_AUTH_ACCEPT_ANY: 1
       MP_SMTP_AUTH_ALLOW_INSECURE: 1
     healthcheck:
-      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8025/api/v1/info" ]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8025/api/v1/info"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -84,6 +80,10 @@ services:
     container_name: vervilure_web
     environment:
       <<: *common-variables
+      # Ensure proper Python path for imports
+      PYTHONPATH: "/app:/app/src"
+      # Add temp directory for formatting tools
+      TMPDIR: "/tmp/formatting"
     ports:
       - "127.0.0.1:8000:8000"
       - "127.0.0.1:5678:5678"
@@ -91,6 +91,8 @@ services:
       - .:/app:delegated
       - logs_data:/app/logs
       - media_data:/app/media
+      # Add writable temporary directory for isort
+      - temp_data:/tmp/formatting
     env_file:
       - .env.docker
     depends_on:
@@ -123,6 +125,7 @@ services:
     container_name: vervilure_celery
     environment:
       <<: *common-variables
+      PYTHONPATH: "/app:/app/src"
     command: /entrypoint.sh celery -A config worker --loglevel=info --concurrency=2
     volumes:
       - .:/app:delegated
@@ -154,6 +157,7 @@ services:
     container_name: vervilure_celery_beat
     environment:
       <<: *common-variables
+      PYTHONPATH: "/app:/app/src"
     command: /entrypoint.sh celery -A config beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
     volumes:
       - .:/app:delegated
@@ -180,6 +184,8 @@ volumes:
   logs_data:
     driver: local
   media_data:
+    driver: local
+  temp_data:
     driver: local
 
 networks:

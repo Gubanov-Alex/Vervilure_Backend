@@ -3,10 +3,12 @@
 from datetime import date, datetime
 from datetime import timezone as dt_timezone
 
-import pytest
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
+
+import pytest
+
 from src.apps.accounts.models import BlacklistedToken, UserAddress
 
 User = get_user_model()

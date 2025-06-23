@@ -3,6 +3,7 @@
 from unittest.mock import Mock, patch
 
 import pytest
+
 from src.apps.accounts.utils.oauth_validators import GoogleOAuthValidator
 
 

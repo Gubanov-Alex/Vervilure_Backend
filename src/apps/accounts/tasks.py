@@ -1,8 +1,6 @@
 import logging
 from typing import Optional
 
-from celery import shared_task
-from celery.exceptions import MaxRetriesExceededError
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
@@ -10,6 +8,9 @@ from django.db import close_old_connections
 from django.db.models import Q
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
+
+from celery import shared_task
+from celery.exceptions import MaxRetriesExceededError
 
 User = get_user_model()
 logger = logging.getLogger(__name__)

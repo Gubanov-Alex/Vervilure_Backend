@@ -2,11 +2,12 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
-from allauth.socialaccount import providers
-from allauth.socialaccount.models import SocialAccount, SocialApp
 from django.contrib.auth import get_user_model
 from django.contrib.sites.models import Site
 from django.test import Client
+
+from allauth.socialaccount import providers
+from allauth.socialaccount.models import SocialAccount, SocialApp
 from rest_framework_simplejwt.tokens import RefreshToken
 
 User = get_user_model()

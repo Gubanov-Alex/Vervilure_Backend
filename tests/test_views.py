@@ -1,11 +1,13 @@
 from unittest.mock import patch
 
-import pytest
 from django.contrib.auth import get_user_model
 from django.urls import NoReverseMatch, reverse
+
+import pytest
 from rest_framework import status
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
+
 from src.apps.accounts.models import UserAddress
 
 User = get_user_model()

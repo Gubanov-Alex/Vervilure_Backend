@@ -1,13 +1,12 @@
 from unittest.mock import patch
 
-import pytest
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError as DjangoValidationError
+
+import pytest
 from rest_framework import serializers
-from src.apps.accounts.serializers import (
-    GoogleOAuthSerializer,
-    PasswordValidationMixin,
-)
+
+from src.apps.accounts.serializers import GoogleOAuthSerializer, PasswordValidationMixin
 
 User = get_user_model()
 

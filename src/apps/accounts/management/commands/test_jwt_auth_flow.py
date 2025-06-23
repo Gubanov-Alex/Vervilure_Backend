@@ -2,6 +2,7 @@ import logging
 
 from django.core.management.base import BaseCommand
 from django.utils import timezone
+
 from src.core.testing.jwt_auth_tester import JWTAuthTester
 
 logger = logging.getLogger(__name__)
@@ -98,6 +99,7 @@ class Command(BaseCommand):
     def _cleanup_test_data(self, email: str):
         """Clean up test data after testing."""
         from django.contrib.auth import get_user_model
+
         from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
 
         User = get_user_model()

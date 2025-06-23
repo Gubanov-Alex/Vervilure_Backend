@@ -6,9 +6,10 @@ import warnings
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 from django.conf import settings
 from django.test.utils import setup_test_environment, teardown_test_environment
+
+import pytest
 
 # Add project root to Python path
 project_root = Path(__file__).parent.parent.absolute()
@@ -30,6 +31,7 @@ from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.test import override_settings
 from django.test.client import Client
+
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
