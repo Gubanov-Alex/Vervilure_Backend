@@ -116,12 +116,21 @@ def readiness_check(request: HttpRequest) -> JsonResponse:
 @never_cache
 def liveness_check(request: HttpRequest) -> JsonResponse:
     """
-    Liveness check for Kubernetes/container orchestration.
+    Kubernetes liveness probe endpoint.
+    Simple check to verify the application is running and responsive.
 
     Returns:
-        JsonResponse: Simple alive status
+        JsonResponse: Basic liveness status (200 OK if app is alive)
     """
-    return JsonResponse({"alive": True, "timestamp": timezone.now().isoformat()})
+    return JsonResponse(
+        {
+            "status": "alive",
+            "timestamp": timezone.now().isoformat(),
+            "message": "Application is running",
+            "uptime": getattr(settings, "START_TIME", "unknown"),
+        },
+        status=200,
+    )
 
 
 # Error handlers

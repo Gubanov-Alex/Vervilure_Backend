@@ -50,13 +50,24 @@ class TestUserModelMethods:
         user.refresh_from_db()
 
         assert user.id == original_id  # ID should remain the same
+
+        # FIX: Flexible validation - check that email matches returned anonymous_id
+        # instead of assuming lowercase format
         assert user.email == f"{anonymous_id}@deleted.local"
+        assert user.email.endswith("@deleted.local")
+        assert user.email.startswith("deleted_user_")
+
         assert user.first_name == "Deleted"
         assert user.last_name == "User"
         assert user.is_active is False
         assert user.is_anonymized is True
         assert user.anonymized_at is not None
         assert anonymous_id.startswith("deleted_user_")
+
+        # Validate anonymous_id structure (12 alphanumeric chars after prefix)
+        anonymous_suffix = anonymous_id[len("deleted_user_") :]
+        assert len(anonymous_suffix) == 12
+        assert anonymous_suffix.isalnum()
 
     def test_user_str_representation_when_anonymized(self):
         """Test user string representation for anonymized users."""
