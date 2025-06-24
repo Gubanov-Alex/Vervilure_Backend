@@ -2,49 +2,77 @@ version: '3.8'
 
 services:
   db:
+    image: postgres:15-alpine
     container_name: vervilure_prod_db
-    # Production database configuration
     environment:
+      # ВАЖНО: Использовать те же имена переменных, что и в .env.production
       POSTGRES_DB: ${DB_NAME:-vervilure_production_db}
       POSTGRES_USER: ${DB_USER:-vervilure_admin}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       PGDATA: /var/lib/postgresql/data/pgdata
     ports:
       - "5432:5432"
-    # Production volume configuration
     volumes:
       - postgres_prod_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-vervilure_admin} -d ${DB_NAME:-vervilure_production_db}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - backend
 
   redis:
+    image: redis:7-alpine
     container_name: vervilure_prod_redis
     ports:
       - "6379:6379"
     volumes:
       - redis_prod_data:/data
-    # Production Redis configuration with persistence
     command: redis-server --appendonly yes --save 60 1000 --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - backend
 
-
+  # Mailpit не нужен в production
   mailpit:
     profiles: ["dev-only"]
 
   web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
     container_name: vervilure_prod_web
     ports:
       - "8000:8000"
     env_file:
       - .env.production
-    # Production volumes (no bind mounts)
     volumes:
       - static_volume:/app/staticfiles
       - media_volume:/app/mediafiles
       - logs_data:/app/logs
-    # Production command with Gunicorn
     command: gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers ${GUNICORN_WORKERS:-2} --worker-class ${GUNICORN_WORKER_CLASS:-sync} --worker-connections ${GUNICORN_WORKER_CONNECTIONS:-1000} --max-requests ${GUNICORN_MAX_REQUESTS:-1000} --max-requests-jitter ${GUNICORN_MAX_REQUESTS_JITTER:-50} --timeout 120 --keep-alive 5 --preload
-    # Remove development settings
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     stdin_open: false
     tty: false
-    # Production healthcheck
+    restart: unless-stopped
+    networks:
+      - backend
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health/", "||", "exit", "1"]
       interval: 30s
@@ -53,24 +81,56 @@ services:
       start_period: 60s
 
   celery:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
     container_name: vervilure_prod_celery
     env_file:
       - .env.production
     volumes:
       - logs_data:/app/logs
-    # Production Celery configuration
     command: celery -A config worker --loglevel=info --concurrency=${CELERY_WORKERS:-2} --queues=celery,emails,maintenance --max-tasks-per-child=1000 --time-limit=1800 --soft-time-limit=1500
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "celery", "-A", "config", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
   celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
     container_name: vervilure_prod_celery_beat
     env_file:
       - .env.production
     volumes:
       - logs_data:/app/logs
-    # Production Beat configuration
     command: celery -A config beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler --pidfile=/tmp/celerybeat.pid
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - backend
 
-  # Production Nginx
+  # Production Nginx (опционально)
   nginx:
     image: nginx:alpine
     container_name: vervilure_prod_nginx
@@ -93,9 +153,9 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    profiles: ["with-nginx"]
 
 volumes:
-  # Production-specific volumes
   postgres_prod_data:
     driver: local
   redis_prod_data:
@@ -104,3 +164,10 @@ volumes:
     driver: local
   media_volume:
     driver: local
+  logs_data:
+    driver: local
+
+networks:
+  backend:
+    name: vervilure_prod_network
+    driver: bridge

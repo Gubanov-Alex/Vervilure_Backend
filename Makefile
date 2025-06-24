@@ -434,3 +434,201 @@ ci-format-check: ## Check formatting in CI mode
 	$(DC_RUN) web $(POETRY) black --check .
 	$(DC_RUN) web $(POETRY) isort --check-only .
 	$(DC_RUN) web $(POETRY) ruff check . --no-cache
+
+
+# =============================================================================
+# PRODUCTION DEPLOYMENT COMMANDS
+# =============================================================================
+
+# Production Docker Compose
+DC_PROD = docker-compose -f docker-compose.prod.yml
+DC_PROD_EXEC = $(DC_PROD) exec
+
+.PHONY: prod-setup
+prod-setup: ## Complete production setup
+	@echo -e "$(YELLOW)Setting up production environment...$(NC)"
+	@if [ ! -f .env.production ]; then \
+		echo -e "$(RED)❌ .env.production file not found!$(NC)"; \
+		echo "Please create .env.production file with production settings"; \
+		exit 1; \
+	fi
+	@make prod-build
+	@make prod-up
+	@sleep 10
+	@make prod-migrate
+	@make prod-collectstatic
+	@echo -e "$(GREEN)✅ Production setup complete!$(NC)"
+
+.PHONY: prod-build
+prod-build: ## Build production containers
+	@echo -e "$(YELLOW)Building production containers...$(NC)"
+	$(DC_PROD) build --no-cache
+
+.PHONY: prod-up
+prod-up: ## Start production services
+	@echo -e "$(YELLOW)Starting production services...$(NC)"
+	$(DC_PROD) up -d
+
+.PHONY: prod-down
+prod-down: ## Stop production services
+	@echo -e "$(YELLOW)Stopping production services...$(NC)"
+	$(DC_PROD) down
+
+.PHONY: prod-restart
+prod-restart: ## Restart production services
+	@echo -e "$(YELLOW)Restarting production services...$(NC)"
+	$(DC_PROD) restart
+
+.PHONY: prod-logs
+prod-logs: ## View production logs
+	$(DC_PROD) logs -f
+
+.PHONY: prod-status
+prod-status: ## Check production services status
+	@echo -e "$(GREEN)Production Services Status:$(NC)"
+	@$(DC_PROD) ps --format 'table {{.Service}}\t{{.Status}}\t{{.Ports}}'
+
+.PHONY: prod-migrate
+prod-migrate: ## Run production migrations
+	@echo -e "$(YELLOW)Running production migrations...$(NC)"
+	$(DC_PROD_EXEC) web poetry run python manage.py migrate
+
+.PHONY: prod-collectstatic
+prod-collectstatic: ## Collect production static files
+	@echo -e "$(YELLOW)Collecting static files...$(NC)"
+	$(DC_PROD_EXEC) web poetry run python manage.py collectstatic --noinput
+
+.PHONY: prod-createsuperuser
+prod-createsuperuser: ## Create production superuser
+	@echo -e "$(YELLOW)Creating production superuser...$(NC)"
+	$(DC_PROD_EXEC) web poetry run python manage.py createsuperuser
+
+.PHONY: prod-shell
+prod-shell: ## Open production Django shell
+	$(DC_PROD_EXEC) web poetry run python manage.py shell
+
+.PHONY: prod-bash
+prod-bash: ## Open production bash shell
+	$(DC_PROD_EXEC) web bash
+
+.PHONY: prod-dbshell
+prod-dbshell: ## Open production database shell
+	$(DC_PROD_EXEC) db psql -U $(DB_USER) -d $(DB_NAME)
+
+# =============================================================================
+# DATABASE TROUBLESHOOTING COMMANDS
+# =============================================================================
+
+.PHONY: debug-db
+debug-db: ## Debug database connection issues
+	@echo -e "$(YELLOW)Debugging database connection...$(NC)"
+	@bash debug-db-connection.sh
+
+.PHONY: check-env
+check-env: ## Check environment configuration
+	@echo -e "$(YELLOW)Checking environment configuration...$(NC)"
+	@if [ -f .env.production ]; then \
+		echo -e "$(GREEN)✅ .env.production exists$(NC)"; \
+		echo "Database configuration:"; \
+		grep -E "^(DB_|POSTGRES_)" .env.production || echo "No database config found"; \
+	else \
+		echo -e "$(RED)❌ .env.production not found$(NC)"; \
+	fi
+	@if [ -f .env.docker ]; then \
+		echo -e "$(GREEN)✅ .env.docker exists$(NC)"; \
+		echo "Database configuration:"; \
+		grep -E "^(DB_|POSTGRES_)" .env.docker || echo "No database config found"; \
+	else \
+		echo -e "$(YELLOW)⚠️  .env.docker not found$(NC)"; \
+	fi
+
+.PHONY: test-db-connection
+test-db-connection: ## Test database connection
+	@echo -e "$(YELLOW)Testing database connection...$(NC)"
+	@if docker-compose ps | grep -q "db.*Up"; then \
+		echo -e "$(GREEN)✅ Database container is running$(NC)"; \
+		if $(DC_EXEC) db psql -U admin -d test_db -c "SELECT 1;" 2>/dev/null; then \
+			echo -e "$(GREEN)✅ Database connection successful$(NC)"; \
+		else \
+			echo -e "$(RED)❌ Database connection failed$(NC)"; \
+			echo "Database logs:"; \
+			docker-compose logs db | tail -10; \
+		fi; \
+	else \
+		echo -e "$(RED)❌ Database container is not running$(NC)"; \
+	fi
+
+.PHONY: fix-db-permissions
+fix-db-permissions: ## Fix database permissions issues
+	@echo -e "$(YELLOW)Fixing database permissions...$(NC)"
+	@echo -e "$(RED)WARNING: This will restart the database container!$(NC)"
+	@read -p "Continue? [y/N] " -n 1 -r; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		docker-compose stop db; \
+		docker-compose rm -f db; \
+		docker volume rm $$(docker-compose config --volumes | grep postgres) 2>/dev/null || true; \
+		docker-compose up -d db; \
+		sleep 10; \
+		echo -e "$(GREEN)✅ Database permissions fixed$(NC)"; \
+	fi
+
+.PHONY: reset-prod-db
+reset-prod-db: ## Reset production database (DANGEROUS!)
+	@echo -e "$(RED)🚨 WARNING: This will DELETE ALL PRODUCTION DATA! 🚨$(NC)"
+	@echo -e "$(RED)This action is IRREVERSIBLE!$(NC)"
+	@read -p "Type 'RESET_PRODUCTION_DATABASE' to continue: " confirmation; \
+	if [ "$$confirmation" = "RESET_PRODUCTION_DATABASE" ]; then \
+		$(DC_PROD) down; \
+		docker volume rm $$($(DC_PROD) config --volumes | grep postgres) 2>/dev/null || true; \
+		$(DC_PROD) up -d db; \
+		sleep 10; \
+		$(DC_PROD_EXEC) web poetry run python manage.py migrate; \
+		echo -e "$(GREEN)✅ Production database reset complete$(NC)"; \
+	else \
+		echo -e "$(YELLOW)Operation cancelled$(NC)"; \
+	fi
+
+# =============================================================================
+# MONITORING AND MAINTENANCE
+# =============================================================================
+
+.PHONY: prod-backup
+prod-backup: ## Create production database backup
+	@mkdir -p backups/production
+	@BACKUP_FILE=backups/production/backup_$$(date +%Y%m%d_%H%M%S).sql.gz; \
+	$(DC_PROD_EXEC) db pg_dump -U $(DB_USER) $(DB_NAME) | gzip > $$BACKUP_FILE; \
+	echo -e "$(GREEN)✅ Backup created: $$BACKUP_FILE$(NC)"
+
+.PHONY: prod-restore
+prod-restore: ## Restore production database from backup
+	@echo -e "$(YELLOW)Available backups:$(NC)"
+	@ls -la backups/production/*.sql.gz 2>/dev/null || echo "No backups found"
+	@read -p "Enter backup filename: " backup_file; \
+	if [ -f "$$backup_file" ]; then \
+		echo -e "$(RED)WARNING: This will replace current database!$(NC)"; \
+		read -p "Continue? [y/N] " -n 1 -r; \
+		if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+			gunzip < "$$backup_file" | $(DC_PROD_EXEC) -T db psql -U $(DB_USER) $(DB_NAME); \
+			echo -e "$(GREEN)✅ Restore complete$(NC)"; \
+		fi; \
+	else \
+		echo -e "$(RED)❌ Backup file not found$(NC)"; \
+	fi
+
+.PHONY: prod-health
+prod-health: ## Check production health
+	@echo -e "$(GREEN)Production Health Check:$(NC)"
+	@curl -s http://localhost:8000/health/ | python -m json.tool || echo "Health check failed"
+
+.PHONY: prod-deploy
+prod-deploy: ## Deploy to production
+	@echo -e "$(YELLOW)Deploying to production...$(NC)"
+	@git pull origin main
+	@make prod-build
+	@make prod-down
+	@make prod-up
+	@sleep 15
+	@make prod-migrate
+	@make prod-collectstatic
+	@make prod-health
+	@echo -e "$(GREEN)✅ Deployment complete!$(NC)"
