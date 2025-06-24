@@ -66,7 +66,10 @@ def load_environment_config() -> None:
 
 
 # CRITICAL FIX: Actually call the function to load environment variables
-load_environment_config()
+if not os.environ.get('RAILWAY_ENVIRONMENT'):
+    load_environment_config()
+else:
+    print("[CONFIG] Railway environment detected - using environment variables")
 
 # Security Configuration
 SECRET_KEY = os.environ.get("SECRET_KEY")
