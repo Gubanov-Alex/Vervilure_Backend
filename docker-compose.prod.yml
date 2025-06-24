@@ -96,7 +96,7 @@ services:
   web:
     build:
       context: .
-      dockerfile: Dockerfile.prod
+      dockerfile: Dockerfile
       args:
         - PYTHON_VERSION=3.12
     image: vervilure_backend:latest
