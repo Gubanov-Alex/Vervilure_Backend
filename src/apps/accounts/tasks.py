@@ -134,7 +134,7 @@ def send_password_reset_email(self, user_id: int, reset_token: str) -> Optional[
 
     Args:
         user_id: User ID
-        reset_token: Password reset token
+        reset_token: Combined reset token (uid:token format)
 
     Returns:
         Success message or None if failed
@@ -145,8 +145,15 @@ def send_password_reset_email(self, user_id: int, reset_token: str) -> Optional[
     try:
         user = User.objects.get(id=user_id)
 
-        # Generate reset URL
-        reset_url = f"{settings.FRONTEND_URL}/reset-password/" f"{reset_token}/"
+        # Parse the combined token
+        try:
+            uid, token = reset_token.split(':', 1)
+        except ValueError:
+            logger.error(f"Invalid reset token format for user {user_id}: {reset_token}")
+            return None
+
+        # Generate reset URL using frontend URL
+        reset_url = f"{settings.FRONTEND_URL}/reset-password/{uid}/{token}/"
 
         context = {
             "user": user,
