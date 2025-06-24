@@ -31,7 +31,8 @@ urlpatterns = [
     path("verify-email/<uuid:token>/", AuthViewSet.as_view({"get": "verify_email_link"}), name="verify_email_link"),
     path("api/v1/auth/", include("src.apps.accounts.auth_urls"), name="jwt"),  # JWT + authentication
     path("api/v1/users/", include("src.apps.accounts.user_urls"), name="users"),  # User management
-    path("api/v1/", include("src.api.urls"), name="Logic"),  # Business logic modules
+    # TODO: Uncomment when modules are implemented
+    # path("api/v1/", include("src.api.urls"), name="Logic"),  # Business logic modules
     # Swagger documentation
     path("swagger<format>/", schema_view.without_ui(cache_timeout=0), name="schema-json"),
     path("swagger/", schema_view.with_ui("swagger", cache_timeout=0), name="schema-swagger-ui"),
