@@ -24,8 +24,10 @@ if not SECRET_KEY:
 ALLOWED_HOSTS = [
     '.railway.app',
     '.up.railway.app',
+    'hospitable-intuition-deveop.up.railway.app',
     'hospitable-intuition-production.up.railway.app',
     'hospitable-intuition.up.railway.app',
+    '*',
 ]
 
 # Add Railway internal host if provided
@@ -53,6 +55,7 @@ CELERY_TASK_ALWAYS_EAGER = True
 CELERY_TASK_EAGER_PROPAGATES = True
 CELERY_BROKER_URL = "memory://"
 CELERY_RESULT_BACKEND = "cache+memory://"
+
 
 # Email Configuration
 # Use environment variables if set, otherwise console backend
@@ -89,8 +92,9 @@ if frontend_url := os.getenv('FRONTEND_URL'):
 
 # CSRF trusted origins
 CSRF_TRUSTED_ORIGINS = [
+    "https://hospitable-intuition-deveop.up.railway.app",
     "https://hospitable-intuition-production.up.railway.app",
-    "https://hospitable-intuition.up.railway.app",
+    "http://localhost:3000",
 ]
 
 # Security settings for production
