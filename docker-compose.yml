@@ -1,6 +1,27 @@
+version: '3.8'
+
 x-common-variables: &common-variables
-  TZ: Europe/Kiev
+  TZ: ${TZ:-Europe/Kiev}
   LANG: C.UTF-8
+
+x-app-common: &app-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+    args:
+      # ИСПРАВЛЕНО: UID/GID вместо USER_ID/GROUP_ID
+      UID: ${UID:-1000}
+      GID: ${GID:-1000}
+  environment:
+    <<: *common-variables
+    PYTHONPATH: "/app:/app/src"
+    TMPDIR: "/tmp/formatting"
+  volumes:
+    - logs_data:/app/logs
+    - temp_data:/tmp/formatting
+  networks:
+    - backend
+  restart: unless-stopped
 
 services:
   db:
@@ -8,16 +29,16 @@ services:
     container_name: vervilure_db
     environment:
       <<: *common-variables
-      POSTGRES_DB: test_db
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: admin_password
+      POSTGRES_DB: ${DB_NAME:-test_db}
+      POSTGRES_USER: ${DB_USER:-admin}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-admin_password}
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "127.0.0.1:5490:5432"
+      - "${DB_EXTERNAL_PORT:-127.0.0.1:5490}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U admin -d test_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-admin} -d ${DB_NAME:-test_db}"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -32,7 +53,7 @@ services:
     environment:
       <<: *common-variables
     ports:
-      - "127.0.0.1:6390:6379"
+      - "${REDIS_EXTERNAL_PORT:-127.0.0.1:6390}:6379"
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes --save 60 1000
@@ -53,8 +74,8 @@ services:
     volumes:
       - mailpit_data:/data
     ports:
-      - "127.0.0.1:8025:8025"
-      - "127.0.0.1:1025:1025"
+      - "${MAILPIT_WEB_PORT:-127.0.0.1:8025}:8025"
+      - "${MAILPIT_SMTP_PORT:-127.0.0.1:1025}:1025"
     environment:
       <<: *common-variables
       MP_MAX_MESSAGES: 5000
@@ -71,26 +92,17 @@ services:
       - backend
 
   web:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        USER_ID: ${USER_ID:-1000}
-        GROUP_ID: ${GROUP_ID:-1000}
+    <<: *app-common
     container_name: vervilure_web
-    environment:
-      <<: *common-variables
-      PYTHONPATH: "/app:/app/src"
-      TMPDIR: "/tmp/formatting"
     ports:
-      - "127.0.0.1:8000:8000"
-      - "127.0.0.1:5678:5678"
+      - "${WEB_PORT:-127.0.0.1:8000}:8000"
+      - "${DEBUG_PORT:-127.0.0.1:5678}:5678"
     volumes:
       - .:/app:rw
       - logs_data:/app/logs
       - temp_data:/tmp/formatting
     env_file:
-      - .env.docker
+      - ${ENV_FILE:-.env.docker}
     depends_on:
       db:
         condition: service_healthy
@@ -98,79 +110,54 @@ services:
         condition: service_healthy
       mailpit:
         condition: service_started
-    command: python manage.py runserver 0.0.0.0:8000
+    command: ${WEB_COMMAND:-python manage.py runserver 0.0.0.0:8000}
     stdin_open: true
     tty: true
-    restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health/", "||", "exit", "1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
-    networks:
-      - backend
 
   celery:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        USER_ID: ${USER_ID:-1000}
-        GROUP_ID: ${GROUP_ID:-1000}
+    <<: *app-common
     container_name: vervilure_celery
-    environment:
-      <<: *common-variables
-      PYTHONPATH: "/app:/app/src"
-    command: celery -A config worker --loglevel=info --concurrency=2 --queues=celery,emails,maintenance
+    command: celery -A config worker --loglevel=info --concurrency=${CELERY_CONCURRENCY:-2} --queues=celery,emails,maintenance
     volumes:
       - .:/app:rw
       - logs_data:/app/logs
       - temp_data:/tmp/formatting
     env_file:
-      - .env.docker
+      - ${ENV_FILE:-.env.docker}
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
-    restart: unless-stopped
     healthcheck:
       test: ["CMD", "celery", "-A", "config", "inspect", "ping"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
-    networks:
-      - backend
 
   celery-beat:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        USER_ID: ${USER_ID:-1000}
-        GROUP_ID: ${GROUP_ID:-1000}
+    <<: *app-common
     container_name: vervilure_celery_beat
-    environment:
-      <<: *common-variables
-      PYTHONPATH: "/app:/app/src"
     command: celery -A config beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
     volumes:
       - .:/app:rw
       - logs_data:/app/logs
       - temp_data:/tmp/formatting
     env_file:
-      - .env.docker
+      - ${ENV_FILE:-.env.docker}
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
-    restart: unless-stopped
     profiles: ["beat"]
-    networks:
-      - backend
 
 volumes:
   postgres_data:

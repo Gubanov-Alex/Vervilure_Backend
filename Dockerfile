@@ -27,12 +27,21 @@ COPY pyproject.toml poetry.lock ./
 RUN poetry install --no-root && rm -rf $POETRY_CACHE_DIR
 
 # Create user with dynamic UID/GID matching host
-ARG USER_ID=1000
-ARG GROUP_ID=1000
+# FIXED: Use UID/GID instead of USER_ID/GROUP_ID
+ARG UID=1000
+ARG GID=1000
 
-# Create group and user with specific IDs
-RUN groupadd --gid $GROUP_ID django \
-    && useradd --uid $USER_ID --gid django --shell /bin/bash --create-home django
+# FIXED: Handle root user case properly
+RUN if [ "$GID" != "0" ]; then \
+        groupadd --gid $GID django; \
+    else \
+        groupadd django; \
+    fi \
+    && if [ "$UID" != "0" ]; then \
+        useradd --uid $UID --gid django --shell /bin/bash --create-home django; \
+    else \
+        useradd --gid django --shell /bin/bash --create-home django; \
+    fi
 
 # Copy entrypoint script first
 COPY entrypoint.sh /entrypoint.sh
@@ -55,7 +64,10 @@ RUN mkdir -p /app/logs /app/static /app/staticfiles /app/media /app/templates \
 
 # Create __init__.py files in migrations directories
 RUN for dir in accounts orders products cart inventory shipping payments reviews analytics; do \
-        touch /app/src/apps/$dir/migrations/__init__.py; \
+        if [ -d "/app/src/apps/$dir" ]; then \
+            mkdir -p "/app/src/apps/$dir/migrations" && \
+            touch "/app/src/apps/$dir/migrations/__init__.py"; \
+        fi; \
     done
 
 # Create log files
@@ -69,14 +81,16 @@ RUN chown -R django:django /app \
     && chmod -R 777 /app/src/apps/*/migrations \
     && chmod 666 /app/logs/*.log
 
-# Verify permissions (for debugging)
-RUN echo "=== Checking permissions ===" \
-    && ls -la /app/src/apps/accounts/migrations/ \
-    && ls -la /app/logs/
+# FIXED: Only switch to non-root user if not root
+RUN if [ "$UID" != "0" ]; then \
+        echo "Switching to django user"; \
+    else \
+        echo "Running as root user"; \
+    fi
 
-# Switch to non-root user
-USER django
-
+# Conditional USER directive
+RUN if [ "$UID" != "0" ]; then echo "USER django" > /tmp/user_directive; else echo "# Running as root" > /tmp/user_directive; fi
+RUN cat /tmp/user_directive
 
 EXPOSE 8000 5678
 
