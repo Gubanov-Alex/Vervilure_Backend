@@ -250,29 +250,25 @@ class UserAdmin(BaseUserAdmin):
                         # Update verification status and activate user
                         user.is_email_verified = True
                         user.is_active = True
-                        user.save(update_fields=['is_email_verified', 'is_active'])
+                        user.save(update_fields=["is_email_verified", "is_active"])
 
                         updated_count += 1
 
                         logger.info(
                             f"Email manually verified by admin: {user.email}",
                             extra={
-                                'user_id': user.id,
-                                'admin_user': request.user.email,
-                                'action': 'manual_verify_email',
-                                'ip_address': request.META.get('REMOTE_ADDR', 'unknown')
-                            }
+                                "user_id": user.id,
+                                "admin_user": request.user.email,
+                                "action": "manual_verify_email",
+                                "ip_address": request.META.get("REMOTE_ADDR", "unknown"),
+                            },
                         )
 
                     except Exception as e:
                         error_count += 1
                         logger.error(
                             f"Failed to verify email for user {user.email}: {e}",
-                            extra={
-                                'user_id': user.id,
-                                'admin_user': request.user.email,
-                                'error': str(e)
-                            }
+                            extra={"user_id": user.id, "admin_user": request.user.email, "error": str(e)},
                         )
 
             # Provide user feedback
@@ -282,18 +278,16 @@ class UserAdmin(BaseUserAdmin):
                     ngettext(
                         "Successfully verified email for %d user.",
                         "Successfully verified emails for %d users.",
-                        updated_count
-                    ) % updated_count
+                        updated_count,
+                    )
+                    % updated_count,
                 )
 
             if already_verified_count > 0:
                 messages.info(
                     request,
-                    ngettext(
-                        "%d user was already verified.",
-                        "%d users were already verified.",
-                        already_verified_count
-                    ) % already_verified_count
+                    ngettext("%d user was already verified.", "%d users were already verified.", already_verified_count)
+                    % already_verified_count,
                 )
 
             if error_count > 0:
@@ -302,15 +296,15 @@ class UserAdmin(BaseUserAdmin):
                     ngettext(
                         "Failed to verify %d user. Check logs for details.",
                         "Failed to verify %d users. Check logs for details.",
-                        error_count
-                    ) % error_count
+                        error_count,
+                    )
+                    % error_count,
                 )
 
         except Exception as e:
             messages.error(request, f"Critical error during email verification: {e}")
             logger.error(
-                f"Admin verify email action failed: {e}",
-                extra={'admin_user': request.user.email, 'error': str(e)}
+                f"Admin verify email action failed: {e}", extra={"admin_user": request.user.email, "error": str(e)}
             )
 
     verify_email_action.short_description = "✅ Verify email for selected users"
@@ -350,22 +344,18 @@ class UserAdmin(BaseUserAdmin):
                     logger.info(
                         f"Verification email queued by admin: {user.email}",
                         extra={
-                            'user_id': user.id,
-                            'admin_user': request.user.email,
-                            'action': 'admin_send_verification',
-                            'ip_address': request.META.get('REMOTE_ADDR', 'unknown')
-                        }
+                            "user_id": user.id,
+                            "admin_user": request.user.email,
+                            "action": "admin_send_verification",
+                            "ip_address": request.META.get("REMOTE_ADDR", "unknown"),
+                        },
                     )
 
                 except Exception as e:
                     error_count += 1
                     logger.error(
                         f"Failed to queue verification email for {user.email}: {e}",
-                        extra={
-                            'user_id': user.id,
-                            'admin_user': request.user.email,
-                            'error': str(e)
-                        }
+                        extra={"user_id": user.id, "admin_user": request.user.email, "error": str(e)},
                     )
 
             # Provide user feedback
@@ -373,10 +363,9 @@ class UserAdmin(BaseUserAdmin):
                 messages.success(
                     request,
                     ngettext(
-                        "Verification email queued for %d user.",
-                        "Verification emails queued for %d users.",
-                        sent_count
-                    ) % sent_count
+                        "Verification email queued for %d user.", "Verification emails queued for %d users.", sent_count
+                    )
+                    % sent_count,
                 )
 
             if already_verified_count > 0:
@@ -385,8 +374,9 @@ class UserAdmin(BaseUserAdmin):
                     ngettext(
                         "%d user already has verified email.",
                         "%d users already have verified emails.",
-                        already_verified_count
-                    ) % already_verified_count
+                        already_verified_count,
+                    )
+                    % already_verified_count,
                 )
 
             if skipped_count > 0:
@@ -395,8 +385,9 @@ class UserAdmin(BaseUserAdmin):
                     ngettext(
                         "Skipped %d user (missing email or error).",
                         "Skipped %d users (missing emails or errors).",
-                        skipped_count
-                    ) % skipped_count
+                        skipped_count,
+                    )
+                    % skipped_count,
                 )
 
             if error_count > 0:
@@ -405,26 +396,21 @@ class UserAdmin(BaseUserAdmin):
                     ngettext(
                         "Failed to queue email for %d user. Check logs for details.",
                         "Failed to queue emails for %d users. Check logs for details.",
-                        error_count
-                    ) % error_count
+                        error_count,
+                    )
+                    % error_count,
                 )
 
         except Exception as e:
             messages.error(request, f"Critical error during email sending: {e}")
             logger.error(
-                f"Admin send verification action failed: {e}",
-                extra={'admin_user': request.user.email, 'error': str(e)}
+                f"Admin send verification action failed: {e}", extra={"admin_user": request.user.email, "error": str(e)}
             )
 
     send_verification_email_action.short_description = "📧 Send verification email to selected users"
 
     # UPDATED ACTIONS LIST - добавлены новые email actions
-    actions = [
-        "reactivate_users",
-        "anonymize_expired_users",
-        "verify_email_action",
-        "send_verification_email_action"
-    ]
+    actions = ["reactivate_users", "anonymize_expired_users", "verify_email_action", "send_verification_email_action"]
 
     # Restrict permissions for non-superusers
     def get_readonly_fields(self, request, obj=None):

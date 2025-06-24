@@ -151,7 +151,7 @@ def send_password_reset_email(self, user_id: int, reset_token: str) -> Optional[
 
         # Parse the combined token
         try:
-            uid, token = reset_token.split(':', 1)
+            uid, token = reset_token.split(":", 1)
             logger.info(f"Token parsed successfully - UID: {uid}, Token: {token[:10]}...")
         except ValueError:
             logger.error(f"Invalid reset token format for user {user_id}: {reset_token}")
@@ -169,7 +169,6 @@ def send_password_reset_email(self, user_id: int, reset_token: str) -> Optional[
             "subject": "Reset your password",
         }
 
-
         logger.info(f"Template context prepared for {user.email}")
         logger.debug(f"Context keys: {list(context.keys())}")
 
@@ -183,7 +182,6 @@ def send_password_reset_email(self, user_id: int, reset_token: str) -> Optional[
         except Exception as template_error:
             logger.error(f"Template rendering failed: {template_error}", exc_info=True)
             raise
-
 
         logger.info(f"Email backend: {getattr(settings, 'EMAIL_BACKEND', 'Not set')}")
         logger.info(f"Email host: {getattr(settings, 'EMAIL_HOST', 'Not set')}")
@@ -214,7 +212,7 @@ def send_password_reset_email(self, user_id: int, reset_token: str) -> Optional[
     except Exception as exc:
         logger.error(f"Failed to send password reset email: {exc}", extra={"user_id": user_id}, exc_info=True)
 
-        countdown = 60 * (2 ** self.request.retries)
+        countdown = 60 * (2**self.request.retries)
 
         try:
             raise self.retry(exc=exc, countdown=countdown)

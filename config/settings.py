@@ -24,6 +24,7 @@ if IS_CI and "DATABASE_URL" in os.environ:
 # Base directory setup MUST be before load_environment_config()
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+
 # Simplified environment variables loading
 def load_environment_config() -> None:
     """Load environment configuration with clear precedence.
