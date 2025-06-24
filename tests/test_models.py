@@ -44,10 +44,7 @@ class TestUserModel:
     def test_create_user_email_normalization(self):
         """Test email normalization - corrected for actual model behavior"""
         user = User.objects.create_user(
-            email="Test.User@EXAMPLE.COM",
-            password="testpass123",
-            first_name="Test",
-            last_name="User"
+            email="Test.User@EXAMPLE.COM", password="testpass123", first_name="Test", last_name="User"
         )
 
         # Model normalizes entire email to lowercase, not just domain
