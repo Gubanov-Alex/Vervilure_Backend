@@ -77,8 +77,7 @@ RUN echo "=== Checking permissions ===" \
 # Switch to non-root user
 USER django
 
-# Set Django settings module for Railway
-ENV DJANGO_SETTINGS_MODULE=config.railway_settings
+
 EXPOSE 8000 5678
 
 ENTRYPOINT ["/entrypoint.sh"]

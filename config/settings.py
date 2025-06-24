@@ -1,4 +1,7 @@
-"""Django settings for Vervilure project."""
+"""
+Django settings for Vervilure Backend project.
+Production-ready configuration with multi-environment support.
+"""
 
 import os
 import sys
@@ -10,84 +13,72 @@ import dj_database_url
 from celery.schedules import crontab
 from dotenv import load_dotenv
 
-# Environment detection
-ENVIRONMENT = os.environ.get("ENVIRONMENT", "development")
-IS_CI = bool(os.environ.get("GITHUB_ACTIONS") or os.environ.get("ENVIRONMENT") == "ci")
-IS_LOCAL_DOCKER = "db" in os.environ.get("DB_HOST", "")
-IS_TESTING = "test" in sys.argv or "pytest" in sys.modules
-
-# CRITICAL: Clear DATABASE_URL in CI to force individual settings
-if IS_CI and "DATABASE_URL" in os.environ:
-    print(f"[CI] Removing DATABASE_URL: {os.environ['DATABASE_URL']}")
-    del os.environ["DATABASE_URL"]
-
-# Base directory setup MUST be before load_environment_config()
+# Build paths inside the project
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Environment detection
+ENVIRONMENT = os.environ.get("ENVIRONMENT", "development")
+IS_PRODUCTION = ENVIRONMENT == "production"
+IS_DEVELOPMENT = ENVIRONMENT == "development"
+IS_CI = bool(os.environ.get("GITHUB_ACTIONS") or ENVIRONMENT == "ci")
+IS_TESTING = "test" in sys.argv or "pytest" in sys.modules
 
-# Simplified environment variables loading
-def load_environment_config() -> None:
-    """Load environment configuration with clear precedence.
 
-    Priority:
-    1. CI environment - use GitHub Actions env vars directly
-    2. Docker environment - use .env.docker
-    3. Local development - use .env.local
-    4. Fail fast if no config found
-    """
+def load_environment_variables():
+    """Load environment variables based on current environment."""
     if IS_CI:
-        # CI environment gets config from GitHub Actions env
-        print("[CONFIG] Using CI environment variables from GitHub Actions")
+        print("[CONFIG] Using CI environment variables")
         return
 
-    if IS_LOCAL_DOCKER:
-        env_file_path = BASE_DIR / ".env.docker"
-        env_description = "Docker development"
+    if IS_PRODUCTION:
+        env_file = BASE_DIR / ".env"
+        print("[CONFIG] Loading production environment from .env")
     else:
-        env_file_path = BASE_DIR / ".env.local"
-        env_description = "Local development"
+        # Try Docker first, then local development
+        if os.path.exists(BASE_DIR / ".env.docker"):
+            env_file = BASE_DIR / ".env.docker"
+            print("[CONFIG] Loading Docker development environment from .env.docker")
+        else:
+            env_file = BASE_DIR / ".env.local"
+            print("[CONFIG] Loading local development environment from .env.local")
 
-    if env_file_path and env_file_path.exists():
-        load_dotenv(env_file_path)
-        print(f"[CONFIG] Loaded {env_description} config from {env_file_path.name}")
-    else:
-        available_files = [f for f in [".env.docker", ".env.local"] if (BASE_DIR / f).exists()]
-
-        error_msg = (
-            f"Required environment file {env_file_path.name} not found. "
-            f"Available files: {available_files or 'none'}. "
-            "Create the appropriate .env file or run 'make init'."
-        )
-
-        if not IS_TESTING:  # Allow tests to run without env files
-            raise FileNotFoundError(error_msg)
-
-        print(f"[WARNING] {error_msg} (Continuing in test mode)")
+    if env_file.exists():
+        load_dotenv(env_file)
+        print(f"[CONFIG] Environment loaded from {env_file.name}")
+    elif not IS_TESTING:
+        raise FileNotFoundError(f"Environment file {env_file} not found")
 
 
-# CRITICAL FIX: Actually call the function to load environment variables
-if not os.environ.get('RAILWAY_ENVIRONMENT'):
-    load_environment_config()
-else:
-    print("[CONFIG] Railway environment detected - using environment variables")
+# Load environment variables
+load_environment_variables()
 
-# Security Configuration
+# =============================================================================
+# CORE DJANGO SETTINGS
+# =============================================================================
+
+# Security
 SECRET_KEY = os.environ.get("SECRET_KEY")
 if not SECRET_KEY:
     if IS_CI or IS_TESTING:
-        SECRET_KEY = "django-insecure-ci-test-key-for-testing-only"
+        SECRET_KEY = "django-insecure-ci-test-key-only"
     else:
-        raise ValueError("SECRET_KEY environment variable is required in production")
+        raise ValueError("SECRET_KEY environment variable is required")
 
-DEBUG: bool = os.environ.get("DEBUG", "False").lower() == "true"
+DEBUG = os.environ.get("DEBUG", "False").lower() == "true"
 
-ALLOWED_HOSTS: List[str] = [
-    host.strip() for host in os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if host.strip()
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+    if host.strip()
 ]
-if DEBUG or IS_TESTING or IS_CI:
-    ALLOWED_HOSTS.extend(["testserver", ".testserver"])
 
-# Application Configuration
+if DEBUG or IS_TESTING:
+    ALLOWED_HOSTS.extend(["testserver", ".testserver", "0.0.0.0"])
+
+# =============================================================================
+# APPLICATION CONFIGURATION
+# =============================================================================
+
 DJANGO_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -113,17 +104,11 @@ THIRD_PARTY_APPS = [
 
 LOCAL_APPS = [
     "src.apps.accounts",
-    # "src.apps.cart",
-    # "src.apps.catalog",
-    # "src.apps.loyalty",
-    # "src.apps.orders",
-    # "src.apps.reviews",
-    # "src.apps.wishlist",
+    # Add your other apps here
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
-# Middleware Configuration
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
@@ -137,10 +122,8 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-AUTH_USER_MODEL = "accounts.User"
 ROOT_URLCONF = "config.urls"
 
-# Template Configuration
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
@@ -163,102 +146,58 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
 
+# =============================================================================
+# DATABASE CONFIGURATION
+# =============================================================================
 
-# Database Configuration
-def get_database_config() -> Dict[str, Any]:
-    """Get database configuration with environment-specific optimizations."""
+def get_database_config():
+    """Configure database based on environment."""
+
+    # Production: Use DATABASE_URL if available
     database_url = os.environ.get("DATABASE_URL")
-
-    base_options = {
-        "connect_timeout": 10,
-        "application_name": "vervilure_backend",
-    }
-
-    # Railway provides DATABASE_URL, use it directly
-    if database_url:
+    if database_url and IS_PRODUCTION:
         config = dj_database_url.parse(database_url, conn_max_age=600)
         config["OPTIONS"] = {
-            **base_options,
-            "sslmode": "prefer" if not DEBUG else "disable",
+            "sslmode": "require",
+            "application_name": "vervilure_backend",
         }
         return {"default": config}
 
-    # CI environment uses individual settings
-    if IS_CI:
-        print("[DEBUG] CI detected: Using individual DB settings")
-        return {
-            "default": {
-                "ENGINE": "django.db.backends.postgresql",
-                "NAME": os.environ.get("DB_NAME", "test_db"),
-                "USER": os.environ.get("DB_USER", "admin"),
-                "PASSWORD": os.environ.get("DB_PASSWORD", "admin_password"),
-                "HOST": os.environ.get("DB_HOST", "localhost"),
-                "PORT": os.environ.get("DB_PORT", "5433"),
-                "OPTIONS": {
-                    **base_options,
-                    "sslmode": "disable",
-                },
-                "CONN_MAX_AGE": 0,
-                "CONN_HEALTH_CHECKS": False,
-                "ATOMIC_REQUESTS": True,
-            }
-        }
-
-    # Local development uses individual settings
-    db_password = os.environ.get("DB_PASSWORD")
-    if not db_password and not IS_TESTING:
-        raise ValueError("DB_PASSWORD is required for local development")
-
+    # Standard PostgreSQL configuration
     return {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
-            "NAME": os.environ.get("DB_NAME", "vervilure"),
+            "NAME": os.environ.get("DB_NAME", "vervilure_db"),
             "USER": os.environ.get("DB_USER", "admin"),
-            "PASSWORD": db_password or "admin_password",
+            "PASSWORD": os.environ.get("DB_PASSWORD", "admin_password"),
             "HOST": os.environ.get("DB_HOST", "localhost"),
             "PORT": os.environ.get("DB_PORT", "5432"),
             "OPTIONS": {
-                **base_options,
-                "sslmode": "disable" if DEBUG else "prefer",
-                "options": "-c log_statement=all" if DEBUG else "",
+                "sslmode": "require" if IS_PRODUCTION else "disable",
+                "application_name": "vervilure_backend",
             },
-            "CONN_MAX_AGE": 300 if DEBUG else 600,
+            "CONN_MAX_AGE": 600 if IS_PRODUCTION else 300,
             "CONN_HEALTH_CHECKS": True,
+            "ATOMIC_REQUESTS": True,
         }
     }
 
 
 DATABASES = get_database_config()
 
-# CI/Testing specific database optimizations
-if IS_CI or IS_TESTING:
-    # PostgreSQL-specific test database configuration
-    DATABASES["default"].update(
-        {
-            "TEST": {
-                "NAME": "test_vervilure_ci",
-                "OPTIONS": {
-                    "client_encoding": "UTF8",
-                },
-                # Performance optimizations for tests
-                "CREATE_DB_VERBOSITY": 0,
-                "KEEPDB": os.environ.get("KEEPDB", "false").lower() == "true",
-            }
-        }
-    )
+# Test database optimizations
+if IS_TESTING or IS_CI:
+    DATABASES["default"]["TEST"] = {
+        "NAME": "test_vervilure",
+        "OPTIONS": {"sslmode": "disable"},
+    }
 
-    # Disable migrations for faster CI if requested
-    class DisableMigrations:
-        def __contains__(self, item):
-            return True
+# =============================================================================
+# AUTHENTICATION & AUTHORIZATION
+# =============================================================================
 
-        def __getitem__(self, item):
-            return None
+AUTH_USER_MODEL = "accounts.User"
 
-    if os.environ.get("DISABLE_MIGRATIONS", "False").lower() == "true":
-        MIGRATION_MODULES = DisableMigrations()
-
-# Password Validation
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
@@ -266,78 +205,79 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
-AUTH_USER_MODEL = "accounts.User"
-
-# Authentication Backends
 AUTHENTICATION_BACKENDS = [
     "django.contrib.auth.backends.ModelBackend",
     "allauth.account.auth_backends.AuthenticationBackend",
 ]
 
-# Admin settings for custom User model
-ADMIN_USER_MODEL = "accounts.User"
+# =============================================================================
+# DJANGO ALLAUTH CONFIGURATION
+# =============================================================================
 
-# Django Allauth Configuration
 SITE_ID = 1
 
-ACCOUNT_LOGIN_METHODS = {"email"}
-ACCOUNT_SIGNUP_FIELDS = ["email*", "password1*", "password2*"]
+# Account settings
+ACCOUNT_EMAIL_REQUIRED = True
 ACCOUNT_EMAIL_VERIFICATION = "mandatory"
+ACCOUNT_USERNAME_REQUIRED = False
+ACCOUNT_AUTHENTICATION_METHOD = "email"
+ACCOUNT_UNIQUE_EMAIL = True
+ACCOUNT_LOGIN_ON_EMAIL_CONFIRMATION = True
 ACCOUNT_LOGOUT_ON_GET = True
 ACCOUNT_SESSION_REMEMBER = True
-ACCOUNT_CONFIRM_EMAIL_ON_GET = True
 ACCOUNT_EMAIL_CONFIRMATION_EXPIRE_DAYS = 7
 
-# URLs Configuration
-LOGIN_URL = "/accounts/login/"
-LOGIN_REDIRECT_URL = "/"
-LOGOUT_REDIRECT_URL = "/"
+# Social account settings
+SOCIALACCOUNT_EMAIL_REQUIRED = True
+SOCIALACCOUNT_EMAIL_VERIFICATION = "mandatory"
+SOCIALACCOUNT_AUTO_SIGNUP = True
+SOCIALACCOUNT_LOGIN_ON_GET = True
+SOCIALACCOUNT_STORE_TOKENS = True
 
-# Google OAuth Configuration
+# Google OAuth configuration
 GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
 GOOGLE_OAUTH_SECRET = os.environ.get("GOOGLE_OAUTH_SECRET", "")
 
-# Social Account Providers Configuration
 SOCIALACCOUNT_PROVIDERS = {
     "google": {
         "SCOPE": ["profile", "email"],
         "AUTH_PARAMS": {"access_type": "online"},
         "OAUTH_PKCE_ENABLED": True,
-        "APP": (
-            {
-                "client_id": GOOGLE_OAUTH_CLIENT_ID,
-                "secret": GOOGLE_OAUTH_SECRET,
-                "key": "",
-            }
-            if GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_SECRET
-            else {}
-        ),
+        "APP": {
+            "client_id": GOOGLE_OAUTH_CLIENT_ID,
+            "secret": GOOGLE_OAUTH_SECRET,
+            "key": "",
+        } if GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_SECRET else {},
     }
 }
 
-SOCIALACCOUNT_STORE_TOKENS = True
-SOCIALACCOUNT_LOGIN_ON_GET = True
-SOCIALACCOUNT_QUERY_EMAIL = True
-SOCIALACCOUNT_EMAIL_REQUIRED = True
-SOCIALACCOUNT_EMAIL_VERIFICATION = "mandatory"
-SOCIALACCOUNT_AUTO_SIGNUP = True
+# URLs
+LOGIN_URL = "/accounts/login/"
+LOGIN_REDIRECT_URL = "/"
+LOGOUT_REDIRECT_URL = "/"
 
-# JWT Configuration
+# =============================================================================
+# JWT CONFIGURATION
+# =============================================================================
+
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=int(os.environ.get("ACCESS_TOKEN_LIFETIME", "15"))),
+    "REFRESH_TOKEN_LIFETIME": timedelta(minutes=int(os.environ.get("REFRESH_TOKEN_LIFETIME", "1440"))),
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
     "UPDATE_LAST_LOGIN": True,
-    "ALGORITHM": "HS256",
-    "SIGNING_KEY": SECRET_KEY,
+    "ALGORITHM": os.environ.get("JWT_ALGORITHM", "HS256"),
+    "SIGNING_KEY": os.environ.get("JWT_SECRET_KEY", SECRET_KEY),
     "AUTH_HEADER_TYPES": ("Bearer",),
     "USER_ID_FIELD": "id",
     "USER_ID_CLAIM": "user_id",
     "TOKEN_TYPE_CLAIM": "token_type",
 }
 
-# REST Framework Configuration
+# =============================================================================
+# REST FRAMEWORK CONFIGURATION
+# =============================================================================
+
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework_simplejwt.authentication.JWTAuthentication",
@@ -350,56 +290,39 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 20,
     "DEFAULT_RENDERER_CLASSES": [
         "rest_framework.renderers.JSONRenderer",
-    ]
-    + (["rest_framework.renderers.BrowsableAPIRenderer"] if DEBUG else []),
-    "DEFAULT_THROTTLE_CLASSES": [
+    ] + (["rest_framework.renderers.BrowsableAPIRenderer"] if DEBUG else []),
+    "DEFAULT_THROTTLE_CLASSES": [] if IS_CI else [
         "rest_framework.throttling.AnonRateThrottle",
         "rest_framework.throttling.UserRateThrottle",
     ],
-    "DEFAULT_THROTTLE_RATES": {
+    "DEFAULT_THROTTLE_RATES": {} if IS_CI else {
         "anon": "100/hour",
         "user": "1000/hour",
         "login": "5/min",
         "registration": "3/min",
-        "password_change": "3/hour",
         "password_reset": "3/hour",
     },
 }
 
-# Internationalization
-LANGUAGE_CODE = "en-us"
-TIME_ZONE = "UTC"
-USE_I18N = True
-USE_TZ = True
+# =============================================================================
+# CACHE CONFIGURATION (REDIS)
+# =============================================================================
 
-# Static Files
-STATIC_URL = "/static/"
-STATIC_ROOT = BASE_DIR / "staticfiles"
-STATICFILES_DIRS = [BASE_DIR / "static"] if (BASE_DIR / "static").exists() else []
-
-# Media Files
-MEDIA_URL = "/media/"
-MEDIA_ROOT = BASE_DIR / "media"
-
-DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
-
-
-# Redis Configuration
-def get_redis_config() -> Dict[str, Any]:
-    """Get Redis configuration with CI fallback."""
+def get_cache_config():
+    """Configure cache based on environment."""
     if IS_CI and not os.environ.get("REDIS_HOST"):
-        # Use dummy cache for CI if Redis not available
         return {
             "default": {
                 "BACKEND": "django.core.cache.backends.dummy.DummyCache",
             }
         }
 
-    redis_url = (
-        f"redis://{os.environ.get('REDIS_HOST', 'localhost')}:"
-        f"{os.environ.get('REDIS_PORT', '6379')}/"
-        f"{os.environ.get('REDIS_DB', '1')}"
-    )
+    redis_host = os.environ.get("REDIS_HOST", "localhost")
+    redis_port = os.environ.get("REDIS_PORT", "6379")
+    redis_db = os.environ.get("REDIS_DB", "1")
+    redis_password = os.environ.get("REDIS_PASSWORD", "")
+
+    redis_url = f"redis://:{redis_password}@{redis_host}:{redis_port}/{redis_db}" if redis_password else f"redis://{redis_host}:{redis_port}/{redis_db}"
 
     return {
         "default": {
@@ -407,7 +330,6 @@ def get_redis_config() -> Dict[str, Any]:
             "LOCATION": redis_url,
             "OPTIONS": {
                 "CLIENT_CLASS": "django_redis.client.DefaultClient",
-                "PASSWORD": os.environ.get("REDIS_PASSWORD"),
                 "CONNECTION_POOL_KWARGS": {
                     "max_connections": 20,
                     "retry_on_timeout": True,
@@ -421,81 +343,66 @@ def get_redis_config() -> Dict[str, Any]:
     }
 
 
-CACHES = get_redis_config()
+CACHES = get_cache_config()
 
-# Celery Configuration
+# =============================================================================
+# CELERY CONFIGURATION
+# =============================================================================
+
 CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
+
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
-CELERY_TIMEZONE = TIME_ZONE
+CELERY_TIMEZONE = "UTC"
 CELERY_TASK_TRACK_STARTED = True
-CELERY_TASK_TIME_LIMIT = 30 * 60
-CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60
 
-CELERY_TASK_ALWAYS_EAGER = os.environ.get("CELERY_TASK_ALWAYS_EAGER", "False").lower() == "true"
-CELERY_TASK_EAGER_PROPAGATES = CELERY_TASK_ALWAYS_EAGER
-
-# Broker connection retry settings
-CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
-CELERY_BROKER_CONNECTION_RETRY = True
-CELERY_BROKER_CONNECTION_MAX_RETRIES = 10
-
-# Result backend settings
-CELERY_RESULT_EXPIRES = 3600  # Results expire after 1 hour
-CELERY_RESULT_PERSISTENT = True
-
-# Environment-specific Celery overrides
-if IS_TESTING or os.environ.get("IS_TESTING") == "True":
+# Environment-specific Celery settings
+if IS_TESTING:
     CELERY_TASK_ALWAYS_EAGER = True
     CELERY_TASK_EAGER_PROPAGATES = True
     CELERY_BROKER_URL = "memory://"
     CELERY_RESULT_BACKEND = "cache+memory://"
-
-elif IS_CI:
+else:
     CELERY_TASK_ALWAYS_EAGER = False
-    CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6380/0")
-    CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6380/0")
-
-CELERY_BEAT_SCHEDULE = {
-    "cleanup-expired-tokens": {
-        "task": "src.apps.accounts.tasks.cleanup_expired_tokens",
-        "schedule": 3600,  # Run every hour
-    },
-    "cleanup-expired-accounts": {
-        "task": "accounts.tasks.cleanup_expired_accounts",
-        "schedule": crontab(hour=2, minute=0),  # every day at 2:00 AM
-    },
-}
-
-if not IS_TESTING:
+    CELERY_TASK_TIME_LIMIT = 30 * 60
+    CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60
     CELERY_TASK_ACKS_LATE = True
     CELERY_TASK_REJECT_ON_WORKER_LOST = True
     CELERY_WORKER_PREFETCH_MULTIPLIER = 1
     CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000
 
-CELERY_TASK_ROUTES = {
-    "src.apps.accounts.tasks.send_verification_email": {"queue": "emails"},
-    "src.apps.accounts.tasks.send_password_reset_email": {"queue": "emails"},
-    "src.apps.accounts.tasks.cleanup_expired_tokens": {"queue": "maintenance"},
+# Celery Beat Schedule
+CELERY_BEAT_SCHEDULE = {
+    "cleanup-expired-tokens": {
+        "task": "src.apps.accounts.tasks.cleanup_expired_tokens",
+        "schedule": 3600,
+    },
+    "cleanup-expired-accounts": {
+        "task": "src.apps.accounts.tasks.cleanup_expired_accounts",
+        "schedule": crontab(hour=2, minute=0),
+    },
 }
 
+# =============================================================================
+# EMAIL CONFIGURATION
+# =============================================================================
 
-# Email Configuration
-def get_email_config() -> Dict[str, Any]:
-    """Get email configuration with environment-specific settings."""
-    if IS_CI or IS_TESTING:
+def get_email_config():
+    """Configure email based on environment."""
+    if IS_TESTING or IS_CI:
         return {
             "EMAIL_BACKEND": "django.core.mail.backends.locmem.EmailBackend",
             "DEFAULT_FROM_EMAIL": "Vervilure Test <test@vervilure.local>",
         }
 
-    if os.environ.get("USE_MAILPIT", "True").lower() == "true":
+    # Use Mailpit for development
+    if DEBUG and os.environ.get("USE_MAILPIT", "true").lower() == "true":
         return {
             "EMAIL_BACKEND": "django.core.mail.backends.smtp.EmailBackend",
             "EMAIL_HOST": os.environ.get("EMAIL_HOST", "mailpit"),
-            "EMAIL_PORT": int(os.environ.get("EMAIL_PORT", 1025)),
+            "EMAIL_PORT": int(os.environ.get("EMAIL_PORT", "1025")),
             "EMAIL_HOST_USER": "",
             "EMAIL_HOST_PASSWORD": "",
             "EMAIL_USE_TLS": False,
@@ -503,225 +410,210 @@ def get_email_config() -> Dict[str, Any]:
             "DEFAULT_FROM_EMAIL": "Vervilure <noreply@vervilure.local>",
         }
 
+    # Production email configuration
     return {
-        "EMAIL_BACKEND": os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend"),
-        "EMAIL_HOST": os.environ.get("EMAIL_HOST", "smtp.example.com"),
+        "EMAIL_BACKEND": "django.core.mail.backends.smtp.EmailBackend",
+        "EMAIL_HOST": os.environ.get("EMAIL_HOST", "smtp.gmail.com"),
         "EMAIL_PORT": int(os.environ.get("EMAIL_PORT", "587")),
         "EMAIL_HOST_USER": os.environ.get("EMAIL_HOST_USER", ""),
         "EMAIL_HOST_PASSWORD": os.environ.get("EMAIL_HOST_PASSWORD", ""),
         "EMAIL_USE_TLS": os.environ.get("EMAIL_USE_TLS", "True").lower() == "true",
-        "DEFAULT_FROM_EMAIL": os.environ.get("DEFAULT_FROM_EMAIL", "Vervilure <noreply@example.com>"),
+        "EMAIL_USE_SSL": os.environ.get("EMAIL_USE_SSL", "False").lower() == "true",
+        "DEFAULT_FROM_EMAIL": os.environ.get("DEFAULT_FROM_EMAIL", "Vervilure <noreply@vervilure.com>"),
     }
 
 
 # Apply email configuration
 email_config = get_email_config()
-globals().update(email_config)
+for key, value in email_config.items():
+    globals()[key] = value
 
-MAILPIT_URL = os.environ.get("MAILPIT_URL", "http://mailpit:8025/api/v1/info")
+# Email settings
+SERVER_EMAIL = globals().get("DEFAULT_FROM_EMAIL")
 SITE_NAME = os.environ.get("SITE_NAME", "Vervilure")
-SERVER_EMAIL = globals().get("DEFAULT_FROM_EMAIL", "Vervilure <noreply@vervilure.local>")
 
-# Configuration for Backend and Frontend URLs
-BACKEND_URL = os.environ.get("BACKEND_URL", default="http://localhost:8000")
-FRONTEND_URL = os.environ.get("FRONTEND_URL", default="http://localhost:3000")
+# =============================================================================
+# STATIC & MEDIA FILES
+# =============================================================================
 
-# Stripe Configuration
+STATIC_URL = "/static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+STATICFILES_DIRS = [BASE_DIR / "static"] if (BASE_DIR / "static").exists() else []
+
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
+
+# WhiteNoise configuration for production
+if IS_PRODUCTION:
+    STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+
+# =============================================================================
+# CORS & CSRF CONFIGURATION
+# =============================================================================
+
+BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000")
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+
+# CORS settings
+CORS_ALLOWED_ORIGINS = [
+    FRONTEND_URL,
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
+if IS_PRODUCTION:
+    # Add production URLs
+    production_urls = os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",")
+    CORS_ALLOWED_ORIGINS.extend([url.strip() for url in production_urls if url.strip()])
+
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_ALL_ORIGINS = DEBUG and not IS_PRODUCTION
+
+# CSRF settings
+CSRF_TRUSTED_ORIGINS = [
+    BACKEND_URL,
+    FRONTEND_URL,
+]
+
+csrf_origins = os.environ.get("CSRF_TRUSTED_ORIGINS", "").split(",")
+CSRF_TRUSTED_ORIGINS.extend([url.strip() for url in csrf_origins if url.strip()])
+
+# =============================================================================
+# SECURITY SETTINGS
+# =============================================================================
+
+if IS_PRODUCTION:
+    # Production security settings
+    SECURE_SSL_REDIRECT = os.environ.get("SECURE_SSL_REDIRECT", "True").lower() == "true"
+    SECURE_HSTS_SECONDS = int(os.environ.get("SECURE_HSTS_SECONDS", "31536000"))
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    X_FRAME_OPTIONS = "DENY"
+else:
+    # Development security settings
+    SECURE_SSL_REDIRECT = False
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
+    X_FRAME_OPTIONS = "SAMEORIGIN"
+
+# =============================================================================
+# THIRD-PARTY INTEGRATIONS
+# =============================================================================
+
+# Stripe configuration
 STRIPE_PUBLIC_KEY = os.environ.get("STRIPE_PUBLIC_KEY", "")
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 
-# CORS Configuration
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-]
-CORS_ALLOW_CREDENTIALS = True
+# =============================================================================
+# LOGGING CONFIGURATION
+# =============================================================================
 
-# Security Settings for Production
-if not DEBUG and not IS_CI:
-    SECURE_BROWSER_XSS_FILTER = True
-    SECURE_CONTENT_TYPE_NOSNIFF = True
-    SECURE_HSTS_SECONDS = 31536000
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_HSTS_PRELOAD = True
-    SECURE_SSL_REDIRECT = True
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
-    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-
-CSRF_TRUSTED_ORIGINS = []
-
-
-# Logging Configuration
-def get_logging_config() -> Dict[str, Any]:
-    """Get logging configuration optimized for environment."""
-    base_config = {
-        "version": 1,
-        "disable_existing_loggers": False,
-        "formatters": {
-            "verbose": {
-                "format": "{levelname} {asctime} {module} {process:d} {thread:d} {message}",
-                "style": "{",
-            },
-            "simple": {
-                "format": "{levelname} {message}",
-                "style": "{",
-            },
-            "ci": {
-                "format": "[{levelname}] {name}: {message}",
-                "style": "{",
-            },
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {
+            "format": "{levelname} {asctime} {module} {process:d} {thread:d} {message}",
+            "style": "{",
         },
-        "handlers": {
-            "console": {
-                "level": "DEBUG" if DEBUG else "INFO",
-                "class": "logging.StreamHandler",
-                "formatter": "ci" if IS_CI else "verbose",
-            },
+        "simple": {
+            "format": "{levelname} {name}: {message}",
+            "style": "{",
         },
-        "loggers": {
-            "django": {
-                "handlers": ["console"],
-                "level": "INFO" if IS_CI else "DEBUG",
-                "propagate": False,
-            },
-            "django.db.backends": {
-                "handlers": ["console"],
-                "level": "WARNING" if IS_CI else "INFO",
-                "propagate": False,
-            },
-            "allauth": {
-                "handlers": ["console"],
-                "level": "ERROR" if IS_CI else "INFO",
-                "propagate": False,
-            },
-            "email_testing": {
-                "handlers": ["console"],
-                "level": "DEBUG",
-                "propagate": False,
-            },
-            "django.core.mail": {
-                "handlers": ["console"],
-                "level": "DEBUG" if DEBUG else "INFO",
-                "propagate": False,
-            },
+    },
+    "handlers": {
+        "console": {
+            "level": "DEBUG" if DEBUG else "INFO",
+            "class": "logging.StreamHandler",
+            "formatter": "simple" if IS_CI else "verbose",
         },
-        "root": {
+    },
+    "loggers": {
+        "django": {
             "handlers": ["console"],
             "level": "INFO",
+            "propagate": False,
         },
-    }
+        "django.db.backends": {
+            "handlers": ["console"],
+            "level": "WARNING" if IS_PRODUCTION else "INFO",
+            "propagate": False,
+        },
+        "src.apps": {
+            "handlers": ["console"],
+            "level": "DEBUG" if DEBUG else "INFO",
+            "propagate": False,
+        },
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": "INFO",
+    },
+}
 
-    # Add file logging only in development (not CI)
-    if not IS_CI and not IS_TESTING:
-        os.makedirs(BASE_DIR / "logs", exist_ok=True)
-        if (BASE_DIR / "logs").exists():
-            base_config["handlers"]["file"] = {
-                "level": "DEBUG",
-                "class": "logging.FileHandler",
-                "filename": BASE_DIR / "logs" / "django.log",
-                "formatter": "verbose",
-            }
-            # Add file handler to all loggers
-            for logger in base_config["loggers"].values():
-                logger["handlers"].append("file")
+# =============================================================================
+# SWAGGER/API DOCUMENTATION
+# =============================================================================
 
-    return base_config
-
-
-LOGGING = get_logging_config()
-
-# Create logs directory
-if not IS_CI:
-    os.makedirs(BASE_DIR / "logs", exist_ok=True)
-
-# Swagger Configuration
 SWAGGER_SETTINGS = {
     "SECURITY_DEFINITIONS": {
         "Bearer": {
             "type": "apiKey",
             "name": "Authorization",
             "in": "header",
-            "description": """JWT token: Bearer <your_token>
-
-How to get a token:
-1. POST /api/v1/auth/jwt/ with your email and password
-2. Copy the access token from the response
-3. Press "Authorize" button in Swagger UI
-4. Enter: Bearer <your_access_token>
-
-Example: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...""",
+            "description": "JWT authorization header using the Bearer scheme. Example: 'Bearer {token}'",
         }
     },
     "USE_SESSION_AUTH": False,
     "JSON_EDITOR": True,
-    # JWT-specific UI settings
     "SUPPORTED_SUBMIT_METHODS": ["get", "post", "put", "delete", "patch"],
     "OPERATIONS_SORTER": "alpha",
     "TAGS_SORTER": "alpha",
     "DOC_EXPANSION": "list",
     "DEEP_LINKING": True,
-    "SHOW_EXTENSIONS": True,
-    "DEFAULT_MODEL_RENDERING": "model",
-    # Authorization persistence settings
     "PERSIST_AUTH": True,
-    "REFETCH_SCHEMA_WITH_AUTH": True,
-    "REFETCH_SCHEMA_ON_LOGOUT": True,
 }
 
-# Environment-specific overrides
+# =============================================================================
+# INTERNATIONALIZATION
+# =============================================================================
+
+LANGUAGE_CODE = "en-us"
+TIME_ZONE = "UTC"
+USE_I18N = True
+USE_TZ = True
+
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# =============================================================================
+# ENVIRONMENT-SPECIFIC OPTIMIZATIONS
+# =============================================================================
+
+# CI optimizations
 if IS_CI:
-    # CI-specific optimizations
-    PASSWORD_HASHERS = [
-        "django.contrib.auth.hashers.MD5PasswordHasher",  # Faster for tests
-    ]
-
-    # Disable throttling in CI
-    REST_FRAMEWORK["DEFAULT_THROTTLE_CLASSES"] = []
-    REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"] = {}
-
-    # Simplified middleware for CI
+    PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
     MIDDLEWARE = [m for m in MIDDLEWARE if "whitenoise" not in m.lower()]
 
-    print("CI Environment detected")
-    print(f"Database: {DATABASES['default']['HOST']}:{DATABASES['default']['PORT']}")
-    print(f"Redis: {CACHES['default']['BACKEND']}")
+# Development optimizations
+#  Development logging
+    os.makedirs(BASE_DIR / "logs", exist_ok=True)
 
-elif IS_TESTING:
-    # Test-specific settings
-    EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
-    CELERY_TASK_ALWAYS_EAGER = True
-    CELERY_TASK_EAGER_PROPAGATES = True
+# =============================================================================
+# DEBUG OUTPUT
+# =============================================================================
 
-# Debug output
 if DEBUG or IS_CI:
-    print("Django settings loaded")
-    print(f"Environment: {ENVIRONMENT}")
-    print(f"IS_CI: {IS_CI}")
-    print(f"Database URL (from env): {os.environ.get('DATABASE_URL', 'Not set')}")
-    print(f"Google OAuth configured: {bool(GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_SECRET)}")
-
-    # Show actual database config being used
-    db_config = DATABASES["default"]
-    print(f"Actual database config: {db_config['NAME']}@{db_config['HOST']}:{db_config['PORT']}")
-
-    if IS_CI:
-        print("CI-specific optimizations applied:")
-        print(f"- Fast password hashing: {len(PASSWORD_HASHERS) == 1}")
-        print(f"- Throttling disabled: {len(REST_FRAMEWORK['DEFAULT_THROTTLE_CLASSES']) == 0}")
-        print(f"- Redis backend: {CACHES['default']['BACKEND']}")
-        print("- Using individual DB settings (DATABASE_URL ignored)")
-
-        # Additional CI debug
-        print("Environment variables check:")
-        print(f"- DB_HOST: {os.environ.get('DB_HOST', 'NOT SET')}")
-        print(f"- DB_PORT: {os.environ.get('DB_PORT', 'NOT SET')}")
-        print(f"- DB_NAME: {os.environ.get('DB_NAME', 'NOT SET')}")
-
-    if DEBUG or IS_CI:
-        print(f"🏃 Celery configured:")
-        print(f"  - Eager mode: {CELERY_TASK_ALWAYS_EAGER}")
-        print(f"  - Broker: {CELERY_BROKER_URL}")
-        print(f"  - Result backend: {CELERY_RESULT_BACKEND}")
-        print(f"  - Environment: {'Testing' if IS_TESTING else 'CI' if IS_CI else 'Development'}")
+    print(f"[SETTINGS] Environment: {ENVIRONMENT}")
+    print(f"[SETTINGS] Debug: {DEBUG}")
+    print(f"[SETTINGS] Database: {DATABASES['default']['NAME']}@{DATABASES['default']['HOST']}")
+    print(f"[SETTINGS] Cache backend: {CACHES['default']['BACKEND']}")
+    print(f"[SETTINGS] Google OAuth configured: {bool(GOOGLE_OAUTH_CLIENT_ID)}")
+    print(f"[SETTINGS] Allowed hosts: {ALLOWED_HOSTS}")
+    print(f"[SETTINGS] CORS origins: {CORS_ALLOWED_ORIGINS}")
+    print(f"[SETTINGS] CSRF trusted origins: {CSRF_TRUSTED_ORIGINS}")
