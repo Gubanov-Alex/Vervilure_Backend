@@ -33,6 +33,12 @@ if os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('PORT'):
     STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
     STATICFILES_STORAGE = 'whitenoise.storage.CompressedStaticFilesStorage'
 
+    # CELERY для Railway
+    CELERY_TASK_ALWAYS_EAGER = True
+    CELERY_TASK_EAGER_PROPAGATES = True
+    CELERY_BROKER_URL = "memory://"
+    CELERY_RESULT_BACKEND = "cache+memory://"
+
     # CORS
     CORS_ALLOWED_ORIGINS = [
         "https://frontend.com",  #change to your actual frontend domain
