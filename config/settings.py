@@ -164,6 +164,8 @@ def get_database_config():
         return {"default": config}
 
     # Standard PostgreSQL configuration
+    ssl_mode = os.environ.get("DATABASE_SSL_MODE", "require" if IS_PRODUCTION else "disable")
+
     return {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
@@ -173,7 +175,7 @@ def get_database_config():
             "HOST": os.environ.get("DB_HOST", "localhost"),
             "PORT": os.environ.get("DB_PORT", "5432"),
             "OPTIONS": {
-                "sslmode": "require" if IS_PRODUCTION else "disable",
+                "sslmode":  ssl_mode,
                 "application_name": "vervilure_backend",
             },
             "CONN_MAX_AGE": 600 if IS_PRODUCTION else 300,
