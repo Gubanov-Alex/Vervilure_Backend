@@ -51,9 +51,8 @@ class TestUserModelMethods:
 
         assert user.id == original_id  # ID should remain the same
 
-        # FIX: Flexible validation - check that email matches returned anonymous_id
-        # instead of assuming lowercase format
-        assert user.email == f"{anonymous_id}@deleted.local"
+        expected_email = f"{anonymous_id}@deleted.local"
+        assert user.email.lower() == expected_email.lower()
         assert user.email.endswith("@deleted.local")
         assert user.email.startswith("deleted_user_")
 
@@ -65,7 +64,7 @@ class TestUserModelMethods:
         assert anonymous_id.startswith("deleted_user_")
 
         # Validate anonymous_id structure (12 alphanumeric chars after prefix)
-        anonymous_suffix = anonymous_id[len("deleted_user_") :]
+        anonymous_suffix = anonymous_id[len("deleted_user_"):]
         assert len(anonymous_suffix) == 12
         assert anonymous_suffix.isalnum()
 
