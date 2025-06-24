@@ -1,0 +1,52 @@
+{% extends "emails/base_email.html" %}
+
+{% block title %}Order Confirmation - Vervilure{% endblock %}
+
+{% block content %}
+    <p>
+        Hi {{ user.first_name|default:user.username }}, <br>
+        Thank you for your order! We're excited to get your handcrafted items to you.
+    </p>
+
+    <h2>Order confirmed</h2>
+    <p>
+        Your order <strong>#{{ order.order_number }}</strong> has been received and is being processed.
+    </p>
+
+    <div class="verification-code">
+        ORDER #{{ order.order_number }}
+    </div>
+
+    <p>
+        <a href="{{ order_url }}" class="button">
+            View Order Details
+        </a>
+    </p>
+
+    <h2>Order Summary</h2>
+    <div style="background-color: #F8F6F1; padding: 20px; border-radius: 8px; margin: 24px 0;">
+        {% for item in order.items.all %}
+        <div style="border-bottom: 1px solid #E0D5C7; padding: 12px 0; display: flex; justify-content: space-between;">
+            <span>{{ item.product.name }} × {{ item.quantity }}</span>
+            <span>${{ item.get_total_price }}</span>
+        </div>
+        {% endfor %}
+        <div style="padding: 12px 0; font-weight: 600; font-size: 18px; display: flex; justify-content: space-between;">
+            <span>Total:</span>
+            <span>${{ order.get_total_cost }}</span>
+        </div>
+    </div>
+
+    <p><strong>Shipping Address:</strong></p>
+    <p style="background-color: #F8F6F1; padding: 12px; border-radius: 8px; margin-bottom: 24px;">
+        {{ order.shipping_address.first_name }} {{ order.shipping_address.last_name }}<br>
+        {{ order.shipping_address.address_line_1 }}<br>
+        {% if order.shipping_address.address_line_2 %}{{ order.shipping_address.address_line_2 }}<br>{% endif %}
+        {{ order.shipping_address.city }}, {{ order.shipping_address.state }} {{ order.shipping_address.postal_code }}<br>
+        {{ order.shipping_address.country }}
+    </p>
+
+    <p>We'll send you another email once your order ships with tracking information.</p>
+
+    <p>Warm regards, <br>The Vervilure Team</p>
+{% endblock %}

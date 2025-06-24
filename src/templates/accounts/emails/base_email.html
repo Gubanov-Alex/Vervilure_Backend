@@ -5,88 +5,154 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ subject|default:"Vervilure" }}</title>
     <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            max-width: 600px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f5f5f5;
-        }
-        .email-container {
-            background-color: white;
-            border-radius: 8px;
-            padding: 30px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        .header {
-            text-align: center;
-            margin-bottom: 30px;
-            padding-bottom: 20px;
-            border-bottom: 2px solid #e1e5e9;
-        }
-        .logo {
-            font-size: 28px;
-            font-weight: bold;
-            color: #2c3e50;
-            margin-bottom: 10px;
-        }
-        .content {
-            margin-bottom: 30px;
+      @media only screen and (max-width: 600px) {
+        .container {
+          width: 100% !important;
+          padding: 32px !important;
         }
         .button {
-            display: inline-block;
-            padding: 12px 24px;
-            background-color: #3498db;
-            color: white;
-            text-decoration: none;
-            border-radius: 5px;
-            font-weight: bold;
-            margin: 20px 0;
+          display: block !important;
+          width: 100% !important;
+          text-align: center !important;
+          box-sizing: border-box !important;
         }
-        .button:hover {
-            background-color: #2980b9;
+        .footer-text {
+          font-size: 14px !important;
         }
-        .footer {
-            text-align: center;
-            padding-top: 20px;
-            border-top: 1px solid #e1e5e9;
-            color: #666;
-            font-size: 14px;
-        }
-        .verification-code {
-            background-color: #f8f9fa;
-            border: 2px dashed #dee2e6;
-            border-radius: 5px;
-            padding: 15px;
-            text-align: center;
-            font-family: monospace;
-            font-size: 18px;
-            font-weight: bold;
-            margin: 20px 0;
-            letter-spacing: 2px;
-        }
+      }
+      body {
+        font-family: Roboto, Arial, sans-serif;
+        font-size: 16px;
+        font-weight: 400;
+        margin: 0;
+        padding: 0;
+        background-color: #F5F0E5;
+      }
+      table {
+        border-spacing: 0;
+        color: #222231;
+      }
+      .button {
+        background-color: #4E5248;
+        color: white;
+        padding: 12px 41px;
+        text-decoration: none;
+        border-radius: 12px;
+        display: inline-block;
+        font-weight: 500;
+      }
+      .button:hover {
+        background-color: #3a3d36;
+      }
+      .button-secondary {
+        background-color: #8B7355;
+        color: white;
+        padding: 12px 41px;
+        text-decoration: none;
+        border-radius: 12px;
+        display: inline-block;
+        font-weight: 500;
+      }
+      .button-secondary:hover {
+        background-color: #6d5a44;
+      }
+      h1 {
+        text-align: center;
+        font-weight: 600;
+        font-size: 32px;
+        margin: 0 0 31px 0;
+        color: #222231;
+      }
+      h2 {
+        font-weight: 400;
+        font-size: 24px;
+        margin: 0 0 24px 0;
+        color: #222231;
+      }
+      p {
+        margin: 0 0 24px 0;
+        line-height: 1.6;
+      }
+      .footer {
+        text-align: center;
+        margin-top: 40px;
+        padding-top: 24px;
+        border-top: 1px solid #E0D5C7;
+        color: #666;
+        font-size: 14px;
+      }
+      .content-block {
+        margin-bottom: 32px;
+      }
+      .verification-code {
+        background-color: #F8F6F1;
+        border: 2px dashed #D1C7B7;
+        border-radius: 8px;
+        padding: 20px;
+        text-align: center;
+        font-family: 'Courier New', monospace;
+        font-size: 18px;
+        font-weight: bold;
+        margin: 24px 0;
+        letter-spacing: 3px;
+        color: #4E5248;
+      }
+      .info-box {
+        background-color: #F8F6F1;
+        padding: 20px;
+        border-radius: 8px;
+        margin: 24px 0;
+        border-left: 4px solid #4E5248;
+      }
+      .status-list {
+        background-color: #F8F6F1;
+        padding: 20px;
+        border-radius: 8px;
+        margin: 24px 0;
+      }
+      .status-list p {
+        margin-bottom: 8px;
+      }
+      .status-list p:last-child {
+        margin-bottom: 0;
+      }
     </style>
 </head>
 <body>
-    <div class="email-container">
-        <div class="header">
-            <div class="logo">{{ site_name|default:"Vervilure" }}</div>
-            <p>Your Premium E-commerce Experience</p>
-        </div>
+  <table width="100%" bgcolor="#F5F0E5" cellpadding="0" cellspacing="0">
+    <tr>
+      <td align="center">
+        <table
+                class="container"
+                width="100%"
+                bgcolor="#ffffff"
+                cellpadding="0"
+                cellspacing="0"
+                style="max-width: 600px;"
+        >
+          <tr>
+            <td align="left" style="padding: 24px;">
+              <h1>{% block title %}{{ site_name|default:"Vervilure" }}{% endblock %}</h1>
 
-        <div class="content">
-            {% block content %}
-            <h2>Hello{% if user %}, {{ user.get_full_name|default:user.email }}{% endif %}!</h2>
-            <p>{{ message|default:"Thank you for using our service." }}</p>
-            {% endblock %}
-        </div>
+              <div class="content-block">
+                {% block content %}
+                <p>Hello{% if user %}, {{ user.get_full_name|default:user.email }}{% endif %}!</p>
+                <p>{{ message|default:"Thank you for using our service." }}</p>
+                {% endblock %}
+              </div>
 
-        <div class="footer">
-            <p>&copy; 2025 {{ site_name|default:"Vervilure" }}. All rights reserved.</p>
-            <p>This email was sent from {{ site_name|default:"Vervilure" }} development environment.</p>
-        </div>
-    </div>
+              <div class="footer">
+                <p>&copy; 2025 {{ site_name|default:"Vervilure" }}. All rights reserved.</p>
+                <p class="footer-text">We're thrilled to have you in our community of handcrafted design lovers.</p>
+                {% if not production %}
+                <p style="color: #999; font-size: 12px;">This email was sent from {{ site_name|default:"Vervilure" }} development environment.</p>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
 </body>
 </html>

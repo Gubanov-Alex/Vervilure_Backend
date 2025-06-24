@@ -134,7 +134,7 @@ def send_password_reset_email(self, user_id: int, reset_token: str) -> Optional[
 
     Args:
         user_id: User ID
-        reset_token: Password reset token
+        reset_token: Combined reset token (uid:token format)
 
     Returns:
         Success message or None if failed
@@ -142,11 +142,25 @@ def send_password_reset_email(self, user_id: int, reset_token: str) -> Optional[
     # Ensure clean DB connections
     close_old_connections()
 
+    logger.info(f"Starting password reset email task for user {user_id}")
+
     try:
         user = User.objects.get(id=user_id)
 
-        # Generate reset URL
-        reset_url = f"{settings.FRONTEND_URL}/reset-password/" f"{reset_token}/"
+        logger.info(f"User found: {user.email} (active: {user.is_active})")
+
+        # Parse the combined token
+        try:
+            uid, token = reset_token.split(":", 1)
+            logger.info(f"Token parsed successfully - UID: {uid}, Token: {token[:10]}...")
+        except ValueError:
+            logger.error(f"Invalid reset token format for user {user_id}: {reset_token}")
+            return None
+
+        # Generate reset URL using frontend URL
+        reset_url = f"{settings.FRONTEND_URL}/reset-password/{uid}/{token}/"
+
+        logger.info(f"Reset URL generated: {reset_url}")
 
         context = {
             "user": user,
@@ -155,17 +169,38 @@ def send_password_reset_email(self, user_id: int, reset_token: str) -> Optional[
             "subject": "Reset your password",
         }
 
-        html_message = render_to_string("accounts/emails/password_reset_email.html", context)
-        plain_message = strip_tags(html_message)
+        logger.info(f"Template context prepared for {user.email}")
+        logger.debug(f"Context keys: {list(context.keys())}")
 
-        send_mail(
-            subject="Reset your Vervilure password",
-            message=plain_message,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[user.email],
-            html_message=html_message,
-            fail_silently=False,
-        )
+        try:
+            logger.info("Rendering password reset email template...")
+            html_message = render_to_string("accounts/emails/password_reset_email.html", context)
+            plain_message = strip_tags(html_message)
+            logger.info("Template rendered successfully")
+
+            logger.info(f"HTML message length: {len(html_message)}, Plain length: {len(plain_message)}")
+        except Exception as template_error:
+            logger.error(f"Template rendering failed: {template_error}", exc_info=True)
+            raise
+
+        logger.info(f"Email backend: {getattr(settings, 'EMAIL_BACKEND', 'Not set')}")
+        logger.info(f"Email host: {getattr(settings, 'EMAIL_HOST', 'Not set')}")
+        logger.info(f"From email: {getattr(settings, 'DEFAULT_FROM_EMAIL', 'Not set')}")
+
+        try:
+            logger.info("Attempting to send password reset email...")
+            send_mail(
+                subject="Reset your Vervilure password",
+                message=plain_message,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[user.email],
+                html_message=html_message,
+                fail_silently=False,
+            )
+            logger.info("Email sent successfully via send_mail")
+        except Exception as email_error:
+            logger.error(f"Email sending failed: {email_error}", exc_info=True)
+            raise
 
         logger.info(f"Password reset email sent to {user.email}")
         return f"Password reset email sent to {user.email}"

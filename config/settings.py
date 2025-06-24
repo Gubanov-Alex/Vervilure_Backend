@@ -21,6 +21,9 @@ if IS_CI and "DATABASE_URL" in os.environ:
     print(f"[CI] Removing DATABASE_URL: {os.environ['DATABASE_URL']}")
     del os.environ["DATABASE_URL"]
 
+# Base directory setup MUST be before load_environment_config()
+BASE_DIR = Path(__file__).resolve().parent.parent
+
 
 # Simplified environment variables loading
 def load_environment_config() -> None:
@@ -62,7 +65,8 @@ def load_environment_config() -> None:
         print(f"[WARNING] {error_msg} (Continuing in test mode)")
 
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+# CRITICAL FIX: Actually call the function to load environment variables
+load_environment_config()
 
 # Security Configuration
 SECRET_KEY = os.environ.get("SECRET_KEY")
@@ -458,7 +462,6 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(hour=2, minute=0),  # every day at 2:00 AM
     },
 }
-
 
 if not IS_TESTING:
     CELERY_TASK_ACKS_LATE = True

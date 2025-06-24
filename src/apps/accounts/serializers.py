@@ -293,7 +293,6 @@ class UserAddressSerializer(serializers.ModelSerializer):
             "address_type",
             "first_name",
             "last_name",
-            "company",
             "address_line1",
             "address_line2",
             "city",

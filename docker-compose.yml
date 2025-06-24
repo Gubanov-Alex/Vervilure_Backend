@@ -122,7 +122,7 @@ services:
     environment:
       <<: *common-variables
       PYTHONPATH: "/app:/app/src"
-    command: celery -A config worker --loglevel=info --concurrency=2
+    command: celery -A config worker --loglevel=info --concurrency=2 --queues=celery,emails,maintenance
     volumes:
       - .:/app:rw
       - logs_data:/app/logs

@@ -288,85 +288,6 @@ class AuthViewSet(GenericViewSet):
                 {"error": "Registration failed. Please try again."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-    @action(detail=False, methods=["post"])
-    def password_reset(self, request) -> Response:
-        """Request password reset with rate limiting and security logging."""
-        email = request.data.get("email", "").lower().strip()
-        client_ip = self._get_client_ip(request)
-
-        # Rate limiting for password reset
-        cache_key = f"password_reset_attempts_{client_ip}"
-        attempts = cache.get(cache_key, 0)
-        if attempts >= 3:
-            logger.warning(
-                f"Password reset rate limit exceeded for IP {client_ip}",
-                extra={"ip_address": client_ip, "action": "password_reset_rate_limit"},
-            )
-            return Response(
-                {"error": "Too many password reset attempts. Please try again later."},
-                status=status.HTTP_429_TOO_MANY_REQUESTS,
-            )
-
-        if not email:
-            return Response({"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Increment attempts counter
-        cache.set(cache_key, attempts + 1, 3600)  # 1 hour
-
-        try:
-            user = User.objects.get(email=email, is_active=True)
-
-            # Generate password reset token
-            from django.contrib.auth.tokens import default_token_generator
-            from django.utils.encoding import force_bytes
-            from django.utils.http import urlsafe_base64_encode
-
-            token = default_token_generator.make_token(user)
-            uid = urlsafe_base64_encode(force_bytes(user.pk))
-
-            # Send password reset email
-            if CELERY_TASKS_AVAILABLE and send_password_reset_email:
-                try:
-                    send_password_reset_email.delay(user.id, token, uid)
-                    logger.info(
-                        f"Password reset email task scheduled: {email}",
-                        extra={
-                            "user_id": user.id,
-                            "email": email,
-                            "ip_address": client_ip,
-                            "action": "password_reset_scheduled",
-                        },
-                    )
-                except Exception as e:
-                    logger.error(
-                        f"Failed to schedule password reset email: {str(e)}",
-                        extra={"user_id": user.id, "email": email, "error": str(e)},
-                        exc_info=True,
-                    )
-            else:
-                logger.warning(
-                    "Password reset email task not available",
-                    extra={"user_id": user.id, "email": email, "celery_available": CELERY_TASKS_AVAILABLE},
-                )
-
-            logger.info(
-                f"Password reset requested: {email}",
-                extra={"user_id": user.id, "email": email, "ip_address": client_ip, "action": "password_reset_request"},
-            )
-
-        except User.DoesNotExist:
-            # Don't reveal if email exists - security best practice
-            logger.info(
-                f"Password reset requested for non-existent email: {email}",
-                extra={"email": email, "ip_address": client_ip, "action": "password_reset_nonexistent"},
-            )
-
-        # Always return success to prevent email enumeration
-        return Response(
-            {"message": "If an account with that email exists, a password reset link has been sent."},
-            status=status.HTTP_200_OK,
-        )
-
     @action(detail=False, methods=["post"], permission_classes=[permissions.IsAuthenticated])
     def resend_verification(self, request) -> Response:
         """Resend email verification with rate limiting."""
@@ -935,7 +856,7 @@ class AuthViewSet(GenericViewSet):
         # Rate limiting for password reset
         cache_key = f"password_reset_attempts_{client_ip}"
         attempts = cache.get(cache_key, 0)
-        if attempts >= 3:
+        if attempts >= 100:
             logger.warning(
                 f"Password reset rate limit exceeded for IP {client_ip}",
                 extra={"ip_address": client_ip, "action": "password_reset_rate_limit"},
@@ -952,7 +873,7 @@ class AuthViewSet(GenericViewSet):
         cache.set(cache_key, attempts + 1, 3600)  # 1 hour
 
         try:
-            user = User.objects.get(email=email, is_active=True)
+            user = User.objects.get(email__iexact=email, is_active=True)
 
             # Generate password reset token
             from django.contrib.auth.tokens import default_token_generator
@@ -962,10 +883,37 @@ class AuthViewSet(GenericViewSet):
             token = default_token_generator.make_token(user)
             uid = urlsafe_base64_encode(force_bytes(user.pk))
 
-            # Send password reset email
-            from .tasks import send_password_reset_email
+            # Send password reset email with proper Celery handling
+            if CELERY_TASKS_AVAILABLE and send_password_reset_email:
+                try:
+                    reset_token = f"{uid}:{token}"
+                    send_password_reset_email.delay(user.id, reset_token)
 
-            send_password_reset_email.delay(user.id, token, uid)
+                    logger.info(
+                        f"Password reset email task scheduled: {email}",
+                        extra={
+                            "user_id": user.id,
+                            "email": email,
+                            "ip_address": client_ip,
+                            "action": "password_reset_scheduled",
+                        },
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Failed to schedule password reset email: {str(e)}",
+                        extra={"user_id": user.id, "email": email, "error": str(e)},
+                        exc_info=True,
+                    )
+            else:
+                logger.warning(
+                    "Password reset email task not available",
+                    extra={
+                        "user_id": user.id,
+                        "email": email,
+                        "celery_available": CELERY_TASKS_AVAILABLE,
+                        "task_available": send_password_reset_email is not None,
+                    },
+                )
 
             logger.info(
                 f"Password reset requested: {email}",
@@ -1397,13 +1345,13 @@ class AuthViewSet(GenericViewSet):
         """Check if registration is blocked for IP."""
         cache_key = f"registration_attempts_{ip}"
         attempts = cache.get(cache_key, 0)
-        return attempts >= 5  # Max 5 registrations per hour
+        return attempts >= 50  # Max 5 registrations per hour
 
     def _is_login_blocked(self, ip: str, email: str) -> bool:
         """Check if login is blocked for IP/email combination."""
         cache_key = f"login_attempts_{ip}_{email}"
         attempts = cache.get(cache_key, 0)
-        return attempts >= 5  # Max 5 failed attempts per hour
+        return attempts >= 50  # Max 5 failed attempts per hour
 
     def _increment_registration_attempts(self, ip: str) -> None:
         """Increment registration attempt counter."""

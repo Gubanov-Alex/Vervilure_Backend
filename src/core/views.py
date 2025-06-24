@@ -1,13 +1,141 @@
-import logging
+"""
+Core views for health checking and error handling.
+"""
 
-from django.http import JsonResponse
+import logging
+import time
+
+from django.conf import settings
+from django.core.cache import cache
+from django.db import connection
+from django.http import HttpRequest, JsonResponse
 from django.utils import timezone
+from django.views.decorators.cache import never_cache
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_GET
 
 logger = logging.getLogger(__name__)
 
 
-def api_400_handler(request, exception=None):
-    """Custom 400 error handler for API."""
+@require_GET
+@never_cache
+@csrf_exempt
+def health_check(request: HttpRequest) -> JsonResponse:
+    """
+    Health check endpoint for monitoring and load balancers.
+
+    Checks:
+    - Database connectivity
+    - Redis connectivity (if configured)
+    - Basic system status
+
+    Returns:
+        JsonResponse: Health status with details
+    """
+    start_time = time.time()
+    health_status = {
+        "status": "healthy",
+        "timestamp": timezone.now().isoformat(),
+        "version": getattr(settings, "VERSION", "1.0.0"),
+        "checks": {},
+    }
+
+    # Database check
+    try:
+        connection.ensure_connection()
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+        health_status["checks"]["database"] = {"status": "healthy", "message": "Database connection successful"}
+    except Exception as e:
+        logger.error(f"Database health check failed: {e}")
+        health_status["checks"]["database"] = {
+            "status": "unhealthy",
+            "message": f"Database connection failed: {str(e)}",
+        }
+        health_status["status"] = "unhealthy"
+
+    # Redis/Cache check
+    try:
+        cache_key = "health_check_test"
+        cache.set(cache_key, "test_value", 10)
+        cached_value = cache.get(cache_key)
+        if cached_value == "test_value":
+            health_status["checks"]["cache"] = {"status": "healthy", "message": "Cache connection successful"}
+        else:
+            health_status["checks"]["cache"] = {"status": "degraded", "message": "Cache write/read mismatch"}
+    except Exception as e:
+        logger.warning(f"Cache health check failed: {e}")
+        health_status["checks"]["cache"] = {"status": "unhealthy", "message": f"Cache connection failed: {str(e)}"}
+        # Don't mark overall status as unhealthy for cache issues
+
+    # Performance metrics
+    response_time = (time.time() - start_time) * 1000  # Convert to milliseconds
+    health_status["response_time_ms"] = round(response_time, 2)
+
+    # Determine HTTP status code
+    status_code = 200 if health_status["status"] == "healthy" else 503
+
+    return JsonResponse(health_status, status=status_code)
+
+
+@require_GET
+@never_cache
+def readiness_check(request: HttpRequest) -> JsonResponse:
+    """
+    Readiness check for Kubernetes/container orchestration.
+
+    Returns:
+        JsonResponse: Readiness status
+    """
+    # Basic readiness checks
+    ready_checks = {
+        "django": True,
+        "database": True,
+    }
+
+    try:
+        # Check database readiness
+        connection.ensure_connection()
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+
+    except Exception as e:
+        logger.error(f"Readiness check failed: {e}")
+        ready_checks["database"] = False
+
+    is_ready = all(ready_checks.values())
+
+    return JsonResponse(
+        {"ready": is_ready, "checks": ready_checks, "timestamp": timezone.now().isoformat()},
+        status=200 if is_ready else 503,
+    )
+
+
+@require_GET
+@never_cache
+def liveness_check(request: HttpRequest) -> JsonResponse:
+    """
+    Kubernetes liveness probe endpoint.
+    Simple check to verify the application is running and responsive.
+
+    Returns:
+        JsonResponse: Basic liveness status (200 OK if app is alive)
+    """
+    return JsonResponse(
+        {
+            "status": "alive",
+            "timestamp": timezone.now().isoformat(),
+            "message": "Application is running",
+            "uptime": getattr(settings, "START_TIME", "unknown"),
+        },
+        status=200,
+    )
+
+
+# Error handlers
+def api_400_handler(request: HttpRequest, exception: Exception = None) -> JsonResponse:
+    """Handle 400 Bad Request errors."""
     return JsonResponse(
         {
             "error": "Bad Request",
@@ -19,8 +147,8 @@ def api_400_handler(request, exception=None):
     )
 
 
-def api_401_handler(request, exception=None):
-    """Custom 401 error handler for API."""
+def api_401_handler(request: HttpRequest, exception: Exception = None) -> JsonResponse:
+    """Handle 401 Unauthorized errors."""
     return JsonResponse(
         {
             "error": "Unauthorized",
@@ -32,8 +160,8 @@ def api_401_handler(request, exception=None):
     )
 
 
-def api_404_handler(request, exception=None):
-    """Custom 404 error handler for API."""
+def api_404_handler(request: HttpRequest, exception: Exception = None) -> JsonResponse:
+    """Handle 404 Not Found errors."""
     return JsonResponse(
         {
             "error": "Not Found",
@@ -45,8 +173,8 @@ def api_404_handler(request, exception=None):
     )
 
 
-def api_500_handler(request):
-    """Custom 500 error handler for API."""
+def api_500_handler(request: HttpRequest) -> JsonResponse:
+    """Handle 500 Internal Server Error."""
     logger.error(f"Server error on {request.path}", exc_info=True)
     return JsonResponse(
         {
