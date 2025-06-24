@@ -174,6 +174,16 @@ def get_database_config() -> Dict[str, Any]:
         "application_name": "vervilure_backend",
     }
 
+    # Railway provides DATABASE_URL, use it directly
+    if database_url:
+        config = dj_database_url.parse(database_url, conn_max_age=600)
+        config["OPTIONS"] = {
+            **base_options,
+            "sslmode": "prefer" if not DEBUG else "disable",
+        }
+        return {"default": config}
+
+    # CI environment uses individual settings
     if IS_CI:
         print("[DEBUG] CI detected: Using individual DB settings")
         return {
@@ -194,17 +204,10 @@ def get_database_config() -> Dict[str, Any]:
             }
         }
 
-    if database_url:
-        config = dj_database_url.parse(database_url, conn_max_age=600)
-        config["OPTIONS"] = {
-            **base_options,
-            "sslmode": "prefer" if not DEBUG else "disable",
-        }
-        return {"default": config}
-
+    # Local development uses individual settings
     db_password = os.environ.get("DB_PASSWORD")
     if not db_password and not IS_TESTING:
-        raise ValueError("DB_PASSWORD is required")
+        raise ValueError("DB_PASSWORD is required for local development")
 
     return {
         "default": {
