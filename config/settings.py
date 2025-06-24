@@ -10,57 +10,11 @@ import dj_database_url
 from celery.schedules import crontab
 from dotenv import load_dotenv
 
-# Base directory setup MUST be before load_environment_config()
-BASE_DIR = Path(__file__).resolve().parent.parent
-
-# Railway Production Settings - ИСПРАВЛЕНО
-if os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('PORT'):
-    DEBUG = False
-    ALLOWED_HOSTS = [
-        '.railway.app',
-        '.up.railway.app',
-        os.environ.get('RAILWAY_PUBLIC_DOMAIN', '').replace('https://', ''),
-    ]
-    ALLOWED_HOSTS = [host for host in ALLOWED_HOSTS if host]
-
-    # Database
-    if os.environ.get('DATABASE_URL'):
-        DATABASES = {
-            'default': dj_database_url.parse(os.environ.get('DATABASE_URL'))
-        }
-
-    # Static files
-    STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
-    STATICFILES_STORAGE = 'whitenoise.storage.CompressedStaticFilesStorage'
-
-    # CELERY для Railway
-    CELERY_TASK_ALWAYS_EAGER = True
-    CELERY_TASK_EAGER_PROPAGATES = True
-    CELERY_BROKER_URL = "memory://"
-    CELERY_RESULT_BACKEND = "cache+memory://"
-
-    # CORS
-    CORS_ALLOWED_ORIGINS = [
-        "https://frontend.com",  #change to your actual frontend domain
-        "http://localhost:3000",
-    ]
-
-    # Security settings
-    CSRF_TRUSTED_ORIGINS = [
-        f"https://{os.environ.get('RAILWAY_PUBLIC_DOMAIN', '').replace('https://', '')}",
-        "http://localhost:3000",
-    ]
-
-    # Email
-    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
-
-
 # Environment detection
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "development")
 IS_CI = bool(os.environ.get("GITHUB_ACTIONS") or os.environ.get("ENVIRONMENT") == "ci")
 IS_LOCAL_DOCKER = "db" in os.environ.get("DB_HOST", "")
 IS_TESTING = "test" in sys.argv or "pytest" in sys.modules
-
 
 # CRITICAL: Clear DATABASE_URL in CI to force individual settings
 if IS_CI and "DATABASE_URL" in os.environ:
@@ -112,8 +66,7 @@ def load_environment_config() -> None:
 
 
 # CRITICAL FIX: Actually call the function to load environment variables
-if not (os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('PORT')):
-    load_environment_config()
+load_environment_config()
 
 # Security Configuration
 SECRET_KEY = os.environ.get("SECRET_KEY")
