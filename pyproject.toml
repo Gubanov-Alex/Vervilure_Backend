@@ -29,6 +29,8 @@ cryptography = "^42.0.0"
 logger = "^1.4"
 crefi = "^2.0.9"
 django-timedeltafield = "^0.7.10"
+gunicorn= "21.2.0"
+
 
 [tool.poetry.group.dev.dependencies]
 # Code quality and formatting tools
