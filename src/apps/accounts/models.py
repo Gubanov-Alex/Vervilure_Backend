@@ -360,6 +360,12 @@ class User(AbstractUser):
             if self.first_name != "Deleted" or self.last_name != "User":
                 raise ValidationError("Anonymized users must have 'Deleted User' name")
 
+    def save(self, *args, **kwargs):
+        """Override save to normalize email."""
+        if self.email:
+            self.email = self.email.lower()
+        super().save(*args, **kwargs)
+
 
 class UserAddress(models.Model):
     """User address model for shipping and billing."""

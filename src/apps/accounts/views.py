@@ -411,7 +411,6 @@ class AuthViewSet(GenericViewSet):
             500: "Server error during Google API communication",
         },
     )
-
     @method_decorator(never_cache)
     @action(detail=False, methods=["post"])
     def google_oauth(self, request) -> Response:
@@ -857,7 +856,7 @@ class AuthViewSet(GenericViewSet):
         # Rate limiting for password reset
         cache_key = f"password_reset_attempts_{client_ip}"
         attempts = cache.get(cache_key, 0)
-        if attempts >= 15:
+        if attempts >= 100:
             logger.warning(
                 f"Password reset rate limit exceeded for IP {client_ip}",
                 extra={"ip_address": client_ip, "action": "password_reset_rate_limit"},
@@ -874,7 +873,7 @@ class AuthViewSet(GenericViewSet):
         cache.set(cache_key, attempts + 1, 3600)  # 1 hour
 
         try:
-            user = User.objects.get(email=email, is_active=True)
+            user = User.objects.get(email__iexact=email, is_active=True)
 
             # Generate password reset token
             from django.contrib.auth.tokens import default_token_generator
@@ -887,7 +886,7 @@ class AuthViewSet(GenericViewSet):
             # Send password reset email with proper Celery handling
             if CELERY_TASKS_AVAILABLE and send_password_reset_email:
                 try:
-                    reset_token = f"{uid.decode()}:{token}"
+                    reset_token = f"{uid}:{token}"
                     send_password_reset_email.delay(user.id, reset_token)
 
                     logger.info(
@@ -912,7 +911,7 @@ class AuthViewSet(GenericViewSet):
                         "user_id": user.id,
                         "email": email,
                         "celery_available": CELERY_TASKS_AVAILABLE,
-                        "task_available": send_password_reset_email is not None
+                        "task_available": send_password_reset_email is not None,
                     },
                 )
 
@@ -1110,7 +1109,6 @@ class AuthViewSet(GenericViewSet):
             400: "Invalid token format - redirect to error page",
         },
     )
-
     @action(detail=False, methods=["get"], url_path="verify-email/(?P<token>[^/.]+)")
     def verify_email_link(self, request, token=None) -> HttpResponseRedirect | HttpResponsePermanentRedirect:
         """
