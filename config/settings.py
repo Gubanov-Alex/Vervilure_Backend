@@ -219,10 +219,15 @@ AUTHENTICATION_BACKENDS = [
 SITE_ID = 1
 
 # Account settings
-ACCOUNT_EMAIL_REQUIRED = True
+ACCOUNT_SIGNUP_FIELDS = [
+    'email*',      # Required field (asterisk indicates required)
+    'password1*',  # Required password field
+    'password2*',  # Required password confirmation
+    # 'first_name',  # Optional - uncomment if needed
+    # 'last_name',   # Optional - uncomment if needed
+]
 ACCOUNT_EMAIL_VERIFICATION = "mandatory"
-ACCOUNT_USERNAME_REQUIRED = False
-ACCOUNT_AUTHENTICATION_METHOD = "email"
+ACCOUNT_LOGIN_METHODS = {'email'}
 ACCOUNT_UNIQUE_EMAIL = True
 ACCOUNT_LOGIN_ON_EMAIL_CONFIRMATION = True
 ACCOUNT_LOGOUT_ON_GET = True
