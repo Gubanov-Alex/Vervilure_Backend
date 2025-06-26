@@ -115,7 +115,7 @@ MIDDLEWARE = [
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
-    "django.middleware.csrf.CsrfViewMiddleware",
+    # "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "allauth.account.middleware.AccountMiddleware",
@@ -398,13 +398,15 @@ CELERY_BEAT_SCHEDULE = {
 
 def get_email_config():
     """Configure email based on environment."""
+
+    # Testing environment
     if IS_TESTING or IS_CI:
         return {
             "EMAIL_BACKEND": "django.core.mail.backends.locmem.EmailBackend",
             "DEFAULT_FROM_EMAIL": "Vervilure Test <test@vervilure.local>",
         }
 
-    # Use Mailpit for development
+    # Development with Mailpit
     if DEBUG and os.environ.get("USE_MAILPIT", "true").lower() == "true":
         return {
             "EMAIL_BACKEND": "django.core.mail.backends.smtp.EmailBackend",
@@ -418,16 +420,37 @@ def get_email_config():
         }
 
     # Production email configuration
-    return {
-        "EMAIL_BACKEND": "django.core.mail.backends.smtp.EmailBackend",
-        "EMAIL_HOST": os.environ.get("EMAIL_HOST", "smtp.gmail.com"),
+    email_backend = os.environ.get("EMAIL_BACKEND", "auto")
+
+    # Auto-detect best backend for production
+    if email_backend == "auto":
+        sendgrid_api_key = os.environ.get("SENDGRID_API_KEY", "")
+        if sendgrid_api_key and sendgrid_api_key.startswith("SG."):
+            # Use SendGrid Web API if API key is available
+            email_backend = "src.core.backends.sendgrid_api.SendGridAPIBackend"
+        else:
+            # Fallback to SMTP
+            email_backend = "django.core.mail.backends.smtp.EmailBackend"
+
+    # Production configuration
+    config = {
+        "EMAIL_BACKEND": email_backend,
+        "EMAIL_HOST": os.environ.get("EMAIL_HOST", "smtp.sendgrid.net"),
         "EMAIL_PORT": int(os.environ.get("EMAIL_PORT", "587")),
-        "EMAIL_HOST_USER": os.environ.get("EMAIL_HOST_USER", ""),
+        "EMAIL_HOST_USER": os.environ.get("EMAIL_HOST_USER", "apikey"),
         "EMAIL_HOST_PASSWORD": os.environ.get("EMAIL_HOST_PASSWORD", ""),
         "EMAIL_USE_TLS": os.environ.get("EMAIL_USE_TLS", "True").lower() == "true",
         "EMAIL_USE_SSL": os.environ.get("EMAIL_USE_SSL", "False").lower() == "true",
-        "DEFAULT_FROM_EMAIL": os.environ.get("DEFAULT_FROM_EMAIL", "Vervilure <noreply@vervilure.com>"),
+        "EMAIL_TIMEOUT": int(os.environ.get("EMAIL_TIMEOUT", "30")),
+        "DEFAULT_FROM_EMAIL": os.environ.get("DEFAULT_FROM_EMAIL", "noreply@vervilure.com"),
     }
+
+    # Add SendGrid specific settings
+    sendgrid_api_key = os.environ.get("SENDGRID_API_KEY", "")
+    if sendgrid_api_key:
+        config["SENDGRID_API_KEY"] = sendgrid_api_key
+
+    return config
 
 
 # Apply email configuration
@@ -624,3 +647,20 @@ if DEBUG or IS_CI:
     print(f"[SETTINGS] Allowed hosts: {ALLOWED_HOSTS}")
     print(f"[SETTINGS] CORS origins: {CORS_ALLOWED_ORIGINS}")
     print(f"[SETTINGS] CSRF trusted origins: {CSRF_TRUSTED_ORIGINS}")
+if not DEBUG:
+    CSRF_COOKIE_HTTPONLY = False
+    CSRF_COOKIE_SAMESITE = 'Lax'
+    SESSION_COOKIE_SAMESITE = 'Lax'
+    CSRF_USE_SESSIONS = False
+
+# Override settings for testing
+try:
+    from .settings_override import *
+except ImportError:
+    pass
+
+# Production settings for HTTP (without SSL)
+if not DEBUG and not SECURE_SSL_REDIRECT:
+    CSRF_COOKIE_SECURE = False
+    SESSION_COOKIE_SECURE = False
+    print("[SETTINGS] Running in production mode without SSL")

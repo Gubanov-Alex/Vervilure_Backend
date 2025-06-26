@@ -1,37 +1,16 @@
-# docker-compose.prod.yml
-# Production configuration for Digital Ocean deployment
-
 version: '3.8'
 
-x-common-variables: &common-variables
-  # Database connection with SSL disabled for internal Docker network
-  DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?sslmode=disable"
-  # Redis connection
-  REDIS_URL: "redis://redis:6379/0"
-  CELERY_BROKER_URL: "redis://redis:6379/0"
-  CELERY_RESULT_BACKEND: "redis://redis:6379/0"
-  # Django settings
-  DJANGO_SETTINGS_MODULE: "config.settings.production"
-  DJANGO_ALLOWED_HOSTS: "${ALLOWED_HOSTS}"
-  DJANGO_SECRET_KEY: "${SECRET_KEY}"
-  # Production environment
-  ENVIRONMENT: "production"
-  DEBUG: "False"
-
+# Production overrides for docker-compose.yml
 services:
   db:
-    image: postgres:15-alpine
-    container_name: vervilure_prod_db
-    restart: unless-stopped
+    # В production не открываем порты наружу
+    ports: []
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      # PostgreSQL optimizations for production
-      POSTGRES_INITDB_ARGS: "-E UTF8 --locale=en_US.UTF-8"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./backups:/backups  # For database backups
+      POSTGRES_DB: ${DB_NAME:-vervilure_db}
+      POSTGRES_USER: ${DB_USER:-vervilure_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=en_US.UTF-8"
+    # Production оптимизации для PostgreSQL
     command: >
       postgres
       -c max_connections=200
@@ -46,254 +25,143 @@ services:
       -c work_mem=4MB
       -c min_wal_size=1GB
       -c max_wal_size=4GB
-      -c max_worker_processes=4
-      -c max_parallel_workers_per_gather=2
-      -c max_parallel_workers=4
-      -c max_parallel_maintenance_workers=2
-      -c log_min_duration_statement=1000
-      -c log_connections=on
-      -c log_disconnections=on
-      -c log_duration=on
-      -c ssl=off
-    networks:
-      - vervilure_network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
+    restart: always
 
   redis:
-    image: redis:7-alpine
-    container_name: vervilure_prod_redis
-    restart: unless-stopped
+    # В production не открываем порты наружу
+    ports: []
+    # Production настройки Redis
     command: >
       redis-server
       --appendonly yes
-      --maxmemory 512mb
+      --save 60 1000
+      --save 300 10
+      --save 900 1
+      --maxmemory 256mb
       --maxmemory-policy allkeys-lru
       --tcp-backlog 511
-      --timeout 0
-      --tcp-keepalive 300
-      --databases 16
-      --save 900 1
-      --save 300 10
-      --save 60 10000
-      --rdbcompression yes
-      --dir /data
-    volumes:
-      - redis_data:/data
-    networks:
-      - vervilure_network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
+      --timeout 300
+      --tcp-keepalive 60
+    restart: always
+
+  mailpit:
+    # В production ограничиваем доступ к Mailpit
+    ports: []
+    # Можно оставить для внутреннего доступа через SSH туннель:
+    # ssh -L 8025:localhost:18025 deploy@your-server
+    # Тогда раскомментируйте:
+    # ports:
+    #   - "127.0.0.1:18025:8025"
+    restart: always
 
   web:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        - PYTHON_VERSION=3.12
-    image: vervilure_backend:latest
-    container_name: vervilure_prod_web
-    restart: unless-stopped
-    environment:
-      <<: *common-variables
-    env_file:
-      - .env
-    volumes:
-      - ./staticfiles:/app/staticfiles
-      - ./media:/app/media
-      - ./logs:/app/logs
-      - ./tmp:/tmp
-    ports:
-      - "127.0.0.1:8000:8000"  # Only expose to localhost for Nginx reverse proxy
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - vervilure_network
+    # Production команда с Gunicorn
     command: >
-      sh -c "
-        echo 'Waiting for database...' &&
-        poetry run python manage.py wait_for_db &&
-        echo 'Collecting static files...' &&
-        poetry run python manage.py collectstatic --noinput &&
-        echo 'Running migrations...' &&
-        poetry run python manage.py migrate --noinput &&
-        echo 'Starting Gunicorn...' &&
-        poetry run gunicorn config.wsgi:application \
-          --bind 0.0.0.0:8000 \
-          --workers 4 \
-          --worker-class sync \
-          --worker-connections 1000 \
-          --max-requests 1000 \
-          --max-requests-jitter 100 \
-          --timeout 30 \
-          --keepalive 5 \
-          --access-logfile /app/logs/gunicorn-access.log \
-          --error-logfile /app/logs/gunicorn-error.log \
-          --log-level info \
-          --capture-output
-      "
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/health/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+      gunicorn config.wsgi:application
+      --bind 0.0.0.0:8000
+      --workers ${GUNICORN_WORKERS:-1}
+      --threads ${GUNICORN_THREADS:-1}
+      --timeout ${GUNICORN_TIMEOUT:-120}
+      --max-requests ${GUNICORN_MAX_REQUESTS:-1000}
+      --max-requests-jitter ${GUNICORN_MAX_REQUESTS_JITTER:-50}
+      --access-logfile -
+      --error-logfile -
+      --log-level ${LOG_LEVEL:-info}
+      --capture-output
+    # В production не открываем порты напрямую
+    ports: []
+    env_file:
+      - ${ENV_FILE:-.env.production}
+    volumes:
+      - .:/app:rw
+      - logs_data:/app/logs
+      - static_data:/app/staticfiles
+      - media_data:/app/media
+      - temp_data:/tmp/formatting
+    restart: always
+    # Production limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 512M
 
   celery:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: vervilure_backend:latest
-    container_name: vervilure_prod_celery
-    restart: unless-stopped
-    environment:
-      <<: *common-variables
-      C_FORCE_ROOT: "true"
+    command: >
+      celery -A config worker
+      --loglevel=${LOG_LEVEL:-info}
+      --concurrency=${CELERY_CONCURRENCY:-2}
+      --queues=celery,emails,maintenance
+      --max-tasks-per-child=${CELERY_WORKER_MAX_TASKS_PER_CHILD:-1000}
+      --time-limit=1800
+      --soft-time-limit=1700
     env_file:
-      - .env
+      - ${ENV_FILE:-.env.production}
     volumes:
-      - ./logs:/app/logs
-      - ./media:/app/media
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - vervilure_network
-    command: >
-      sh -c "
-        echo 'Waiting for database...' &&
-        poetry run python manage.py wait_for_db &&
-        echo 'Starting Celery worker...' &&
-        poetry run celery -A config worker \
-          --loglevel=info \
-          --concurrency=4 \
-          --max-tasks-per-child=1000 \
-          --time-limit=300 \
-          --soft-time-limit=240 \
-          --without-gossip \
-          --without-mingle \
-          --without-heartbeat \
-          -Q default,high_priority,low_priority \
-          -E
-      "
-    healthcheck:
-      test: ["CMD-SHELL", "celery -A config inspect ping -d celery@$$HOSTNAME"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+      - .:/app:ro
+      - logs_data:/app/logs
+      - temp_data:/tmp/formatting
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
 
-  celery_beat:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: vervilure_backend:latest
-    container_name: vervilure_prod_celery_beat
-    restart: unless-stopped
-    environment:
-      <<: *common-variables
+  celery-beat:
     env_file:
-      - .env
+      - ${ENV_FILE:-.env.production}
     volumes:
-      - ./logs:/app/logs
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      celery:
-        condition: service_healthy
-    networks:
-      - vervilure_network
-    command: >
-      sh -c "
-        echo 'Waiting for database...' &&
-        poetry run python manage.py wait_for_db &&
-        echo 'Starting Celery beat...' &&
-        poetry run celery -A config beat \
-          --loglevel=info \
-          --scheduler django_celery_beat.schedulers:DatabaseScheduler
-      "
+      - .:/app:ro
+      - logs_data:/app/logs
+      - temp_data:/tmp/formatting
+    restart: always
+    # В production всегда запускаем beat
+    profiles: []
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
 
-  # Optional: Flower for Celery monitoring
-  flower:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: vervilure_backend:latest
-    container_name: vervilure_prod_flower
-    restart: unless-stopped
-    environment:
-      <<: *common-variables
-      FLOWER_BASIC_AUTH: "${FLOWER_USER}:${FLOWER_PASSWORD}"
-    env_file:
-      - .env
-    ports:
-      - "127.0.0.1:5555:5555"  # Only expose to localhost
-    depends_on:
-      - celery
-      - redis
-    networks:
-      - vervilure_network
-    command: >
-      poetry run celery -A config flower \
-        --port=5555 \
-        --url_prefix=flower \
-        --basic_auth=${FLOWER_USER}:${FLOWER_PASSWORD}
-
-  # Optional: Nginx as internal reverse proxy
+  # Nginx for static
   nginx:
     image: nginx:alpine
-    container_name: vervilure_prod_nginx
-    restart: unless-stopped
+    container_name: vervilure_nginx
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/conf.d:/etc/nginx/conf.d:ro
-      - ./staticfiles:/app/staticfiles:ro
-      - ./media:/app/media:ro
-      - ./certbot/conf:/etc/letsencrypt:ro
-      - ./certbot/www:/var/www/certbot:ro
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - static_data:/static:ro
+      - media_data:/media:ro
     depends_on:
       - web
+    restart: always
     networks:
-      - vervilure_network
-    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
+      - backend
 
-  # Optional: Certbot for SSL certificates
-  certbot:
-    image: certbot/certbot
-    container_name: vervilure_prod_certbot
-    restart: unless-stopped
-    volumes:
-      - ./certbot/conf:/etc/letsencrypt
-      - ./certbot/www:/var/www/certbot
-    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
-
+# Production volumes
 volumes:
   postgres_data:
     driver: local
   redis_data:
     driver: local
+  mailpit_data:
+    driver: local
+  logs_data:
+    driver: local
+  static_data:
+    driver: local
+  media_data:
+    driver: local
+  temp_data:
+    driver: local
 
 networks:
-  vervilure_network:
+  backend:
+    name: vervilure_prod_network
     driver: bridge
-    ipam:
-      config:
-        - subnet: 172.20.0.0/16
